@@ -1,20 +1,20 @@
-// client/src/pages/Settings.jsx
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 export default function Settings() {
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
+
   const [activeTab, setActiveTab] = useState('account');
 
-  // Данные пользователя (заглушки)
-  const [user, setUser] = useState({
-    avatar: '/icons/default-avatar.png',
-    nickname: 'GermanLearner',
-    email: 'learner@example.com',
-    login: 'german_learner'
-  });
+  // Реальный пользователь из контекста
+  const currentUser = {
+    username: user?.username || 'Гость',
+    // email и другие поля пока отсутствуют — оставим заглушки или уберём
+  };
 
-  // Настройки языков
+  // Настройки языков (локальные)
   const [interfaceLang, setInterfaceLang] = useState(() => {
     return localStorage.getItem('interfaceLang') || 'ru';
   });
@@ -25,29 +25,28 @@ export default function Settings() {
     return localStorage.getItem('translationLang') || 'ru';
   });
 
-  // Сохранение в localStorage при изменении
   useEffect(() => {
     localStorage.setItem('interfaceLang', interfaceLang);
     localStorage.setItem('targetLang', targetLang);
     localStorage.setItem('translationLang', translationLang);
   }, [interfaceLang, targetLang, translationLang]);
 
-  // Редактирование ника
+  // Редактирование ника (локально, только для отображения)
   const [editNickname, setEditNickname] = useState(false);
-  const [newNickname, setNewNickname] = useState(user.nickname);
+  const [newNickname, setNewNickname] = useState(currentUser.username);
 
   const handleSaveNickname = () => {
     if (newNickname.trim()) {
-      setUser({ ...user, nickname: newNickname.trim() });
+      // TODO: отправить запрос на сервер для обновления имени
+      // пока просто сохраняем локально
+      alert('Смена ника временно недоступна');
     }
     setEditNickname(false);
   };
 
   const handleLogout = () => {
-    // Очистить все данные сессии (если есть токены)
-    localStorage.clear();
-    // Перенаправить на главную
-    navigate('/');
+    logout();          // очищает токен и пользователя
+    navigate('/login'); // перенаправляем на страницу входа
   };
 
   const handleChangePassword = () => {
@@ -63,8 +62,11 @@ export default function Settings() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8 px-4">
       <div className="max-w-6xl mx-auto">
-        <h1 className="text-3xl font-bold mb-6 text-gray-900 dark:text-white">Настройки</h1>
-        
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Настройки</h1>
+          <span className="text-sm dark:text-gray-300">👋 {currentUser.username}</span>
+        </div>
+
         <div className="flex flex-col md:flex-row gap-6">
           {/* Левое меню */}
           <div className="md:w-64 bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
@@ -94,10 +96,10 @@ export default function Settings() {
             {activeTab === 'account' && (
               <div className="space-y-6">
                 <div className="flex flex-col items-center sm:flex-row sm:items-start gap-6 pb-6 border-b border-gray-200 dark:border-gray-700">
-                  {/* Аватар */}
+                  {/* Аватар (заглушка) */}
                   <div className="flex-shrink-0">
                     <img
-                      src={user.avatar}
+                      src="/icons/default-avatar.png"
                       alt="Avatar"
                       className="w-24 h-24 rounded-full object-cover border-2 border-gray-300 dark:border-gray-600"
                       onError={(e) => { e.target.src = '/icons/default-avatar.png'; }}
@@ -107,10 +109,10 @@ export default function Settings() {
                     </button>
                   </div>
                   
-                  {/* Ник и данные */}
+                  {/* Данные пользователя */}
                   <div className="flex-1 space-y-2">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-gray-600 dark:text-gray-400 font-medium">Ник:</span>
+                      <span className="text-gray-600 dark:text-gray-400 font-medium">Имя пользователя:</span>
                       {editNickname ? (
                         <div className="flex items-center gap-2">
                           <input
@@ -135,7 +137,7 @@ export default function Settings() {
                         </div>
                       ) : (
                         <div className="flex items-center gap-2">
-                          <span className="text-gray-900 dark:text-white font-medium">{user.nickname}</span>
+                          <span className="text-gray-900 dark:text-white font-medium">{currentUser.username}</span>
                           <button
                             onClick={() => setEditNickname(true)}
                             className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
@@ -146,8 +148,7 @@ export default function Settings() {
                       )}
                     </div>
                     <div className="flex flex-col gap-1 text-sm">
-                      <p><span className="text-gray-600 dark:text-gray-400">Email:</span> {user.email}</p>
-                      <p><span className="text-gray-600 dark:text-gray-400">Логин:</span> {user.login}</p>
+                      <p><span className="text-gray-600 dark:text-gray-400">Email:</span> не указан</p>
                       <p>
                         <span className="text-gray-600 dark:text-gray-400">Пароль:</span> ••••••••
                         <button
@@ -161,7 +162,7 @@ export default function Settings() {
                   </div>
                 </div>
 
-                <div className="pt-4">
+                <div className="pt-4 flex gap-3">
                   <button
                     onClick={handleLogout}
                     className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"

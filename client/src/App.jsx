@@ -1,52 +1,88 @@
-import { BrowserRouter as Router, Routes, Route, useLocation } from "react-router-dom";
-import { AnimatePresence } from "framer-motion";
-import Header from "./components/Header";
-import Footer from "./components/Footer";
-import Library from "./pages/Library";
-import Reader from "./pages/Reader";
-import Vocab from "./pages/Vocab";
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext';
+import ProtectedRoute from './components/ProtectedRoute';
+import Layout from './components/Layout'; // импортируем Layout
+import Login from './pages/Login';
+import Register from './pages/Register';
+import Library from './pages/Library';
+import Vocab from './pages/Vocab';
+import Reader from './pages/Reader';
 import VideoReader from './pages/VideoReader';
 import Trainer from './pages/Trainer';
-import './index.css'
 import Settings from './pages/Settings';
 
-function NotFound() {
+function App() {
   return (
-    <div className="text-center py-12">
-      <h1 className="text-4xl font-bold text-gray-700 dark:text-gray-200">404</h1>
-      <p className="text-gray-500 dark:text-gray-400 mt-2">Страница не найдена</p>
-    </div>
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <Library />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/vocab"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <Vocab />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/read/:id"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <Reader />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/video/:id"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <VideoReader />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/trainer"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <Trainer />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <Settings />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }
 
-// Компонент, который содержит Routes с анимацией
-function AnimatedRoutes() {
-  const location = useLocation();
-  return (
-    <AnimatePresence mode="wait">
-      <Routes location={location} key={location.pathname}>
-        <Route path="/" element={<Library />} />
-        <Route path="/read/:id" element={<Reader />} />
-        <Route path="/vocab" element={<Vocab />} />
-        <Route path="/video/:id" element={<VideoReader />} />
-        <Route path="/trainer" element={<Trainer />} />
-        <Route path="/settings" element={<Settings />} />
-        <Route path="*" element={<NotFound />} />
-      </Routes>
-    </AnimatePresence>
-  );
-}
-
-export default function App() {
-  return (
-    <Router>
-      <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-300">
-        <Header />
-        <main className="flex-grow">
-          <AnimatedRoutes />
-        </main>
-        <Footer />
-      </div>
-    </Router>
-  );
-}
+export default App;

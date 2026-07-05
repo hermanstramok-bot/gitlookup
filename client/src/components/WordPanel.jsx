@@ -1,3 +1,5 @@
+import { useSpeech } from '../hooks/useSpeech';
+
 export default function WordPanel({
   canonicalWord,
   wordTranslation,
@@ -18,6 +20,14 @@ export default function WordPanel({
   onClose,
   onToggleContext,
 }) {
+  const { speak, speechSupported } = useSpeech();
+
+  const handleSpeak = () => {
+    const word = (canonicalWord || '').trim();
+    if (!word || !speechSupported) return;
+    speak({ original: word }, 'wordpanel');
+  };
+
   return (
     <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700">
       <div className="flex justify-between items-center mb-4">
@@ -49,12 +59,23 @@ export default function WordPanel({
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           Слово
         </label>
-        <input
-          type="text"
-          value={canonicalWord}
-          onChange={(e) => onCanonicalChange(e.target.value)}
-          className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-        />
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={canonicalWord || ''}
+            onChange={(e) => onCanonicalChange(e.target.value)}
+            className="flex-1 border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+          />
+          {speechSupported && (canonicalWord || '').trim() && (
+            <button
+              onClick={handleSpeak}
+              className="flex-shrink-0 px-3 py-2 text-gray-500 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400 transition-colors"
+              title="Прослушать слово"
+            >
+              🔊
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="mb-5 p-4 bg-green-50 dark:bg-green-900/30 border-l-4 border-green-500 rounded">
@@ -84,7 +105,7 @@ export default function WordPanel({
             </div>
             <input
               type="text"
-              value={manualTranslation}
+              value={manualTranslation || ''}
               onChange={(e) => onManualChange(e.target.value)}
               placeholder="Свой перевод"
               className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm mt-2"
@@ -97,7 +118,7 @@ export default function WordPanel({
             </div>
             <input
               type="text"
-              value={manualTranslation}
+              value={manualTranslation || ''}
               onChange={(e) => onManualChange(e.target.value)}
               placeholder="Редактировать перевод"
               className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm"

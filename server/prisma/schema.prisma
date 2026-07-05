@@ -1,0 +1,103 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================
+// ПОЛЬЗОВАТЕЛИ
+// ============================================================
+model User {
+  id         Int       @id @default(autoincrement())
+  username   String    @unique @db.VarChar(50)
+  password   String    @map("password_hash") @db.Text
+  createdAt  DateTime  @default(now()) @map("created_at")
+  
+  materials  Material[]
+  folders    Folder[]
+  vocab      Vocab[]
+
+  @@map("users")
+}
+
+// ============================================================
+// ПАПКИ
+// ============================================================
+model Folder {
+  id        Int       @id @default(autoincrement())
+  name      String    @db.Text
+  createdAt DateTime  @default(now()) @map("created_at")
+  
+  userId    Int       @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  materials Material[]
+
+  @@map("folders")
+}
+
+// ============================================================
+// МАТЕРИАЛЫ (тексты / видео)
+// ============================================================
+model Material {
+  id          Int       @id @default(autoincrement())
+  title       String    @db.Text
+  type        String    @db.VarChar(20)      // 'text' или 'video'
+  youtubeUrl  String?   @map("youtube_url") @db.Text
+  rawContent  String?   @map("raw_content") @db.Text
+  icon        String?   @default("/icons/default.png")
+  importedAt  DateTime  @default(now()) @map("imported_at")
+  folderId    Int?      @map("folder_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  userId      Int       @map("user_id")
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folder      Folder?   @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  subtitles   Subtitle[]
+  vocab       Vocab[]
+
+  @@map("texts")
+}
+
+// ============================================================
+// СУБТИТРЫ
+// ============================================================
+model Subtitle {
+  id        Int      @id @default(autoincrement())
+  startMs   Int      @map("start_ms")
+  endMs     Int      @map("end_ms")
+  lineText  String?  @map("line_text") @db.Text
+  lineIndex Int      @map("line_index")
+
+  textId    Int      @map("text_id")
+  material  Material @relation(fields: [textId], references: [id], onDelete: Cascade)
+
+  @@map("subtitles")
+}
+
+// ============================================================
+// СЛОВАРЬ
+// ============================================================
+model Vocab {
+  id              Int       @id @default(autoincrement())
+  word            String    @db.Text
+  translation     String?   @db.Text
+  exampleSentence String?   @map("example_sentence") @db.Text
+  status          String    @default("new") @db.VarChar(20)
+  sourceTextId    Int?      @map("source_text_id")
+  sourceSubtitleId Int?     @map("source_subtitle_id")
+  sourceCustom    String?   @map("source_custom") @db.Text
+  sentenceIndex   Int?      @map("sentence_index")
+  wordIndices     String?   @map("word_indices") @db.Text
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  userId          Int       @map("user_id")
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  material        Material? @relation(fields: [sourceTextId], references: [id], onDelete: SetNull)
+
+  @@map("vocab")
+}

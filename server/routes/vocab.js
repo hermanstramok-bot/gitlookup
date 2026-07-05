@@ -1,155 +1,157 @@
-import { getDB, saveDB } from '../db.js';
+const router = require('express').Router();
+const prisma = require('../prismaClient');
+const authenticateToken = require('../middleware/auth');
 
-export function setupVocabRoutes(app) {
+// ─── ПОЛУЧИТЬ ВСЕ СЛОВА (только для текущего пользователя) ──
+router.get('/vocab', authenticateToken, async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const words = await prisma.vocab.findMany({
+      where: { userId },
+      include: {
+        material: { select: { title: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    const result = words.map(w => ({
+      ...w,
+      source_title: w.material?.title || w.sourceCustom || null
+    }));
+    res.json(result);
+  } catch (err) {
+    console.error('Error fetching vocab:', err);
+    res.status(500).json({ error: 'Failed to fetch vocab' });
+  }
+});
 
-  // GET все слова
-  app.get('/api/vocab', (req, res) => {
-    const db = getDB();
-    try {
-      const stmt = db.prepare(`
-        SELECT v.*, t.title as source_title
-        FROM vocab v
-        LEFT JOIN texts t ON v.source_text_id = t.id
-        ORDER BY v.created_at DESC
-      `);
-      const rows = [];
-      while (stmt.step()) {
-        const row = stmt.getAsObject();
-        if (!row.source_title && row.source_custom) {
-          row.source_title = row.source_custom;
-        }
-        rows.push(row);
+// ─── ДОБАВИТЬ СЛОВО ──────────────────────────────────────────
+router.post('/vocab', authenticateToken, async (req, res) => {
+  const userId = req.user.id;
+  const {
+    word,
+    translation,
+    example_sentence,
+    status,
+    source_text_id,
+    source_subtitle_id,
+    sentence_index,
+    word_indices,
+    source_custom
+  } = req.body;
+
+  if (!word) {
+    return res.status(400).json({ error: 'Word is required' });
+  }
+
+  try {
+    if (source_text_id) {
+      const material = await prisma.material.findFirst({
+        where: { id: source_text_id, userId }
+      });
+      if (!material) {
+        return res.status(403).json({ error: 'Source material not found or not yours' });
       }
-      stmt.reset();
-      res.json(rows);
-    } catch (err) {
-      console.error('Vocab GET error:', err);
-      res.status(500).json({ error: err.message });
     }
-  });
 
-  // POST новое слово (поддержка source_text_id ИЛИ source_custom)
-  app.post('/api/vocab', (req, res) => {
-    const { word, translation, example_sentence, status, source_text_id, source_custom } = req.body;
-    if (!word) return res.status(400).json({ error: 'Word required' });
-    const db = getDB();
-    try {
-      const stmt = db.prepare(`
-        INSERT INTO vocab (word, translation, example_sentence, status, source_text_id, source_custom)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `);
-      stmt.run([word, translation || '', example_sentence || '', status || 'new', source_text_id || null, source_custom || null]);
-      saveDB();
-      res.json({ success: true });
-    } catch (err) {
-      console.error('Vocab insert error:', err);
-      res.status(500).json({ error: err.message });
+    // Преобразуем массив индексов в JSON-строку, т.к. в схеме Prisma поле wordIndices имеет тип String?
+    const wordIndicesValue = word_indices ? JSON.stringify(word_indices) : null;
+
+    const newWord = await prisma.vocab.create({
+      data: {
+        word,
+        translation: translation || '',
+        exampleSentence: example_sentence || '',
+        status: status || 'new',
+        sourceTextId: source_text_id || null,
+        sourceSubtitleId: source_subtitle_id || null,
+        sentenceIndex: sentence_index || null,
+        wordIndices: wordIndicesValue,
+        sourceCustom: source_custom || null,
+        userId
+      }
+    });
+    res.status(201).json(newWord);
+  } catch (err) {
+    console.error('Error adding word:', err);
+    res.status(500).json({ error: 'Failed to add word' });
+  }
+});
+
+// ─── ОБНОВИТЬ СЛОВО (PATCH) ──────────────────────────────────
+router.patch('/vocab/:id', authenticateToken, async (req, res) => {
+  const userId = req.user.id;
+  const id = parseInt(req.params.id);
+  const { word, translation, status, source_custom } = req.body;
+
+  try {
+    const existing = await prisma.vocab.findFirst({
+      where: { id, userId }
+    });
+    if (!existing) {
+      return res.status(404).json({ error: 'Word not found or not yours' });
     }
-  });
 
-  // PATCH обновить любые поля (статус, слово, перевод, источник)
-  app.patch('/api/vocab/:id', (req, res) => {
-    const { id } = req.params;
-    const { status, word, translation, source_custom } = req.body;
-    const db = getDB();
-    try {
-      const updates = [];
-      const params = [];
-      if (status !== undefined) {
-        updates.push('status = ?');
-        params.push(status);
+    const updated = await prisma.vocab.update({
+      where: { id },
+      data: {
+        word: word !== undefined ? word : undefined,
+        translation: translation !== undefined ? translation : undefined,
+        status: status !== undefined ? status : undefined,
+        sourceCustom: source_custom !== undefined ? source_custom : undefined,
+        updatedAt: new Date()
       }
-      if (word !== undefined) {
-        updates.push('word = ?');
-        params.push(word);
-      }
-      if (translation !== undefined) {
-        updates.push('translation = ?');
-        params.push(translation);
-      }
-      if (source_custom !== undefined) {
-        updates.push('source_custom = ?');
-        params.push(source_custom);
-      }
-      if (updates.length === 0) {
-        return res.status(400).json({ error: 'No fields to update' });
-      }
-      updates.push('updated_at = CURRENT_TIMESTAMP');
-      params.push(id);
-      const sql = `UPDATE vocab SET ${updates.join(', ')} WHERE id = ?`;
-      const stmt = db.prepare(sql);
-      stmt.run(params);
-      saveDB();
+    });
+    res.json(updated);
+  } catch (err) {
+    console.error('Error updating word:', err);
+    res.status(500).json({ error: 'Failed to update word' });
+  }
+});
 
-      const selectStmt = db.prepare('SELECT * FROM vocab WHERE id = ?');
-      selectStmt.bind([id]);
-      let updatedRow = null;
-      if (selectStmt.step()) updatedRow = selectStmt.getAsObject();
-      selectStmt.reset();
-      res.json(updatedRow || { success: true });
-    } catch (err) {
-      console.error('Vocab PATCH error:', err);
-      res.status(500).json({ error: err.message });
+// ─── УДАЛИТЬ СЛОВО ──────────────────────────────────────────
+router.delete('/vocab/:id', authenticateToken, async (req, res) => {
+  const userId = req.user.id;
+  const id = parseInt(req.params.id);
+
+  try {
+    const existing = await prisma.vocab.findFirst({
+      where: { id, userId }
+    });
+    if (!existing) {
+      return res.status(404).json({ error: 'Word not found or not yours' });
     }
-  });
 
-  // PUT (для совместимости)
-  app.put('/api/vocab/:id', (req, res) => {
-    const { id } = req.params;
-    const { status, word, translation, source_custom } = req.body;
-    const db = getDB();
-    try {
-      const updates = [];
-      const params = [];
-      if (status !== undefined) {
-        updates.push('status = ?');
-        params.push(status);
-      }
-      if (word !== undefined) {
-        updates.push('word = ?');
-        params.push(word);
-      }
-      if (translation !== undefined) {
-        updates.push('translation = ?');
-        params.push(translation);
-      }
-      if (source_custom !== undefined) {
-        updates.push('source_custom = ?');
-        params.push(source_custom);
-      }
-      if (updates.length === 0) {
-        return res.status(400).json({ error: 'No fields to update' });
-      }
-      updates.push('updated_at = CURRENT_TIMESTAMP');
-      params.push(id);
-      const sql = `UPDATE vocab SET ${updates.join(', ')} WHERE id = ?`;
-      const stmt = db.prepare(sql);
-      stmt.run(params);
-      saveDB();
+    await prisma.vocab.delete({ where: { id } });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error deleting word:', err);
+    res.status(500).json({ error: 'Failed to delete word' });
+  }
+});
 
-      const selectStmt = db.prepare('SELECT * FROM vocab WHERE id = ?');
-      selectStmt.bind([id]);
-      let updatedRow = null;
-      if (selectStmt.step()) updatedRow = selectStmt.getAsObject();
-      selectStmt.reset();
-      res.json(updatedRow || { success: true });
-    } catch (err) {
-      console.error('Vocab PUT error:', err);
-      res.status(500).json({ error: err.message });
+// ─── ТРЕНАЖЁР (получить слова для тренировки) ──────────────
+router.get('/vocab/trainer', authenticateToken, async (req, res) => {
+  const userId = req.user.id;
+  const sourceTextId = req.query.source_text_id;
+
+  try {
+    const where = { userId };
+    if (sourceTextId && sourceTextId !== 'all') {
+      where.sourceTextId = parseInt(sourceTextId);
     }
-  });
 
-  // DELETE
-  app.delete('/api/vocab/:id', (req, res) => {
-    const { id } = req.params;
-    const db = getDB();
-    try {
-      const stmt = db.prepare('DELETE FROM vocab WHERE id = ?');
-      stmt.run([id]);
-      saveDB();
-      res.json({ success: true });
-    } catch (err) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-}
+    const words = await prisma.vocab.findMany({
+      where,
+      select: { word: true, translation: true }
+    });
+
+    res.json({
+      words: words.map(w => ({ de: w.word, ru: w.translation }))
+    });
+  } catch (err) {
+    console.error('Error trainer:', err);
+    res.status(500).json({ error: 'Failed to fetch trainer data' });
+  }
+});
+
+module.exports = router;

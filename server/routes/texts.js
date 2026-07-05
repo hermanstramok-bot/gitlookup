@@ -1,134 +1,71 @@
-import { getDB } from '../db.js';
+const router = require('express').Router();
+const prisma = require('../prismaClient');
+const authenticateToken = require('../middleware/auth');
+const { splitSentences } = require('../utils/sentenceSplitter');
 
-// Кеш переводов и разбора предложений (очищается при перезапуске сервера или импорте)
+// Кеш для текстов (в памяти)
 const textCache = new Map();
 
-export function setupTextsRoutes(app) {
+router.get('/texts/:id', authenticateToken, async (req, res) => {
+  const id = parseInt(req.params.id);
+  const userId = req.user.id;
 
-  // GET /api/texts/:id - получить текст с предварительно переведёнными предложениями (с кешем)
-  app.get('/api/texts/:id', async (req, res) => {
-    const { id } = req.params;
-    const startTime = Date.now();
+  if (isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
 
-    // Проверяем кеш
-    if (textCache.has(id)) {
-      const cached = textCache.get(id);
-      console.log(`✅ Text ${id} served from cache (age: ${Date.now() - cached.timestamp} ms)`);
-      return res.json(cached.data);
-    }
-
-    console.log(`🔄 Text ${id} not in cache, processing...`);
-    const db = getDB();
-
-    try {
-      // Получаем текст из БД
-      const stmt = db.prepare('SELECT * FROM texts WHERE id = ?');
-      stmt.bind([id]);
-      let textRow = null;
-      if (stmt.step()) {
-        textRow = stmt.getAsObject();
-      }
-      stmt.reset();
-
-      if (!textRow) {
-        return res.status(404).json({ error: 'Text not found' });
-      }
-
-      const content = textRow.raw_content || '';
-      if (!content) {
-        return res.json({
-          id: textRow.id,
-          title: textRow.title,
-          type: textRow.type,
-          content: '',
-          sentences: []
-        });
-      }
-
-      // Разбиваем на предложения
-      const rawSentences = splitIntoSentences(content);
-      const sentences = [];
-
-      for (const sentence of rawSentences) {
-        // Переводим каждое предложение (Google Translate)
-        const tStart = Date.now();
-        const translated = await translateSentenceViaGoogle(sentence);
-        console.log(`   Translation of "${sentence.slice(0, 30)}..." took ${Date.now() - tStart} ms`);
-
-        sentences.push({
-          original: sentence.trim(),
-          translated: translated.trim(),
-          words: sentence.trim().split(/\s+/),
-          analysis: [] // анализ подгружается по требованию на клиенте
-        });
-      }
-
-      const responseData = {
-        id: textRow.id,
-        title: textRow.title,
-        type: textRow.type,
-        content: content,
-        sentences: sentences
-      };
-
-      // Сохраняем в кеш
-      textCache.set(id, {
-        data: responseData,
-        timestamp: Date.now()
-      });
-
-      console.log(`✅ Text ${id} processed and cached in ${Date.now() - startTime} ms`);
-      res.json(responseData);
-
-    } catch (err) {
-      console.error('Error fetching text:', err);
-      res.status(500).json({ error: err.message });
-    }
-  });
-}
-
-// ============================
-// HELPER: Разбиение на предложения
-// ============================
-function splitIntoSentences(text) {
-  const sentenceRegex = /[^.!?]*[.!?]+/g;
-  const matches = text.match(sentenceRegex) || [];
-  return matches
-    .map(s => s.trim())
-    .filter(s => s.length > 0);
-}
-
-// ============================
-// HELPER: Перевод предложения через Google Translate
-// ============================
-async function translateSentenceViaGoogle(sentence) {
-  if (!sentence || sentence.trim().length === 0) {
-    return '';
+  // Проверяем кеш
+  const cached = textCache.get(id);
+  if (cached) {
+    return res.json(cached);
   }
 
   try {
-    const url = new URL('https://translate.googleapis.com/translate_a/single');
-    url.searchParams.append('client', 'gtx');
-    url.searchParams.append('sl', 'de');
-    url.searchParams.append('tl', 'ru');
-    url.searchParams.append('dt', 't');
-    url.searchParams.append('q', sentence);
-
-    const result = await fetch(url.toString());
-    const data = await result.json();
-
-    if (data && data[0] && data[0][0]) {
-      return data[0][0][0];
+    const text = await prisma.material.findFirst({
+      where: { id, userId, type: 'text' }
+    });
+    if (!text) {
+      return res.status(404).json({ error: 'Text not found or not yours' });
     }
-    return sentence;
-  } catch (err) {
-    console.error('Google Translate error:', err);
-    return sentence;
-  }
-}
 
-// Функция для очистки кеша (например, после импорта текста)
-export function clearTextCache() {
+    const raw = text.rawContent || '';
+    // Разбиваем на абзацы (двойной перевод строки)
+    const paragraphs = raw.split(/\n\s*\n/).filter(p => p.trim().length > 0);
+    
+    // Определяем язык (по умолчанию немецкий, можно добавить поле в материал)
+    const language = text.language || 'de';
+
+    // Разбиваем каждый абзац на предложения с учётом аббревиатур
+    // Используем Intl.Segmenter через функцию splitSentences
+    const sentences = [];
+    for (const paragraph of paragraphs) {
+      const paraSentences = splitSentences(paragraph, language);
+      sentences.push(...paraSentences);
+    }
+
+    const result = {
+      id: text.id,
+      title: text.title,
+      type: text.type,
+      sentences: sentences.map(s => ({ 
+        original: s, 
+        translated: '', 
+        words: s.split(/\s+/) 
+      })),
+      paragraphs: paragraphs.map(p => splitSentences(p, language))
+    };
+
+    textCache.set(id, result);
+    res.json(result);
+  } catch (err) {
+    console.error('Error fetching text:', err);
+    res.status(500).json({ error: 'Failed to fetch text' });
+  }
+});
+
+// Функция для очистки кеша (можно использовать при обновлении материала)
+function clearTextCache() {
   textCache.clear();
   console.log('🧹 Text cache cleared');
 }
+
+module.exports = router;
+module.exports.clearTextCache = clearTextCache;

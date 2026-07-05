@@ -1,15 +1,12 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-
-const PRESET_ICONS = [
-  '/icons/icon1.png',
-  '/icons/icon2.png',
-  '/icons/icon3.png',
-  '/icons/icon4.png',
-];
-
-const DEFAULT_ICON = '/icons/default.png';
+import { apiFetch } from '../utils/api';
+import { useAuth } from '../context/AuthContext';
+import YouTubeImportModal from '../components/YouTubeImportModal';
+import TextImportModal from '../components/TextImportModal';
+import IconPicker from '../components/IconPicker';
+import { PRESET_ICONS, DEFAULT_ICON } from '../constants';
 
 // ============================================================
 // Компонент для отображения сообщений (успех / ошибка)
@@ -214,238 +211,6 @@ function MoveToFolderModal({ isOpen, onClose, folders, currentFolderId, onMove }
 }
 
 // ============================================================
-// Shared icon picker (used by import + edit forms)
-// ============================================================
-function IconPicker({ selectedIcon, customIcon, onSelectPreset, onCustomFile }) {
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      alert('Выберите изображение');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onloadend = () => onCustomFile(reader.result);
-    reader.readAsDataURL(file);
-  };
-
-  return (
-    <div>
-      <label className="block mb-2 dark:text-gray-200">Иконка</label>
-      <div className="flex gap-2 flex-wrap">
-        {PRESET_ICONS.map((icon) => (
-          <button
-            type="button"
-            key={icon}
-            onClick={() => onSelectPreset(icon)}
-            className={`w-12 h-12 border rounded ${
-              selectedIcon === icon && !customIcon ? 'ring-2 ring-blue-500' : 'border-gray-300 dark:border-gray-600'
-            }`}
-          >
-            <img src={icon} alt="icon" className="w-full h-full object-contain" />
-          </button>
-        ))}
-        <label className="w-12 h-12 border border-gray-300 dark:border-gray-600 rounded flex items-center justify-center cursor-pointer">
-          <input type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
-          <span className="text-2xl dark:text-gray-200">+</span>
-        </label>
-      </div>
-      {customIcon && (
-        <div className="mt-2">
-          <p className="text-sm text-gray-600 dark:text-gray-400">Кастомная иконка:</p>
-          <img src={customIcon} alt="custom" className="w-12 h-12 object-contain mt-1" />
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ============================================================
-// Import dialog (text / youtube)
-// ============================================================
-function ImportModal({ importType, onClose, onSubmit, loading }) {
-  const [title, setTitle] = useState('');
-  const [textContent, setTextContent] = useState('');
-  const [youtubeUrl, setYoutubeUrl] = useState('');
-  const [selectedIcon, setSelectedIcon] = useState(PRESET_ICONS[0]);
-  const [customIcon, setCustomIcon] = useState(null);
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    const icon = customIcon || selectedIcon || PRESET_ICONS[0];
-
-    if (importType === 'text') {
-      if (!title || !textContent) {
-        alert('Заполните поля');
-        return;
-      }
-      onSubmit({ type: 'text', title, content: textContent, icon });
-    } else {
-      if (!youtubeUrl) {
-        alert('Введите URL');
-        return;
-      }
-      onSubmit({ type: 'youtube', title: title || undefined, youtube_url: youtubeUrl, icon });
-    }
-  };
-
-  if (!importType) return null;
-
-  return (
-    <AnimatePresence>
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.9 }}
-          transition={{ duration: 0.2 }}
-          className="bg-white dark:bg-gray-800 rounded max-w-md w-full"
-        >
-          <div className="flex justify-between p-4 border-b dark:border-gray-700">
-            <h2 className="text-xl font-bold dark:text-white">
-              Импорт {importType === 'text' ? 'текста' : 'YouTube'}
-            </h2>
-            <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
-              ✕
-            </button>
-          </div>
-          <form onSubmit={handleSubmit} className="p-4 space-y-4">
-            <input
-              type="text"
-              placeholder="Название"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-              required={importType === 'text'}
-            />
-            {importType === 'text' && (
-              <textarea
-                placeholder="Текст"
-                rows={6}
-                value={textContent}
-                onChange={(e) => setTextContent(e.target.value)}
-                className="w-full border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                required
-              />
-            )}
-            {importType === 'youtube' && (
-              <input
-                type="url"
-                placeholder="YouTube URL"
-                value={youtubeUrl}
-                onChange={(e) => setYoutubeUrl(e.target.value)}
-                className="w-full border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                required
-              />
-            )}
-            <IconPicker
-              selectedIcon={selectedIcon}
-              customIcon={customIcon}
-              onSelectPreset={(icon) => {
-                setSelectedIcon(icon);
-                setCustomIcon(null);
-              }}
-              onCustomFile={(dataUrl) => {
-                setCustomIcon(dataUrl);
-                setSelectedIcon(null);
-              }}
-            />
-            <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={onClose} className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
-                Отмена
-              </button>
-              <button type="submit" disabled={loading} className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
-                {loading ? 'Импорт...' : 'Импорт'}
-              </button>
-            </div>
-          </form>
-        </motion.div>
-      </div>
-    </AnimatePresence>
-  );
-}
-
-// ============================================================
-// Edit dialog (title + icon)
-// ============================================================
-function EditMaterialModal({ material, onClose, onSave }) {
-  const [editTitle, setEditTitle] = useState('');
-  const [selectedIcon, setSelectedIcon] = useState(null);
-  const [customIcon, setCustomIcon] = useState(null);
-
-  useEffect(() => {
-    if (!material) return;
-    setEditTitle(material.title);
-    if (PRESET_ICONS.includes(material.icon)) {
-      setSelectedIcon(material.icon);
-      setCustomIcon(null);
-    } else {
-      setSelectedIcon(null);
-      setCustomIcon(material.icon);
-    }
-  }, [material]);
-
-  if (!material) return null;
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    const icon = customIcon || selectedIcon || PRESET_ICONS[0];
-    onSave({ title: editTitle, icon });
-  };
-
-  return (
-    <AnimatePresence>
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.9 }}
-          transition={{ duration: 0.2 }}
-          className="bg-white dark:bg-gray-800 rounded max-w-md w-full"
-        >
-          <div className="flex justify-between p-4 border-b dark:border-gray-700">
-            <h2 className="text-xl font-bold dark:text-white">Редактирование</h2>
-            <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
-              ✕
-            </button>
-          </div>
-          <form onSubmit={handleSubmit} className="p-4 space-y-4">
-            <input
-              type="text"
-              placeholder="Название"
-              value={editTitle}
-              onChange={(e) => setEditTitle(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-              required
-            />
-            <IconPicker
-              selectedIcon={selectedIcon}
-              customIcon={customIcon}
-              onSelectPreset={(icon) => {
-                setSelectedIcon(icon);
-                setCustomIcon(null);
-              }}
-              onCustomFile={(dataUrl) => {
-                setCustomIcon(dataUrl);
-                setSelectedIcon(null);
-              }}
-            />
-            <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={onClose} className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
-                Отмена
-              </button>
-              <button type="submit" className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
-                Сохранить
-              </button>
-            </div>
-          </form>
-        </motion.div>
-      </div>
-    </AnimatePresence>
-  );
-}
-
-// ============================================================
 // Material card (with drag and drop)
 // ============================================================
 function MaterialCard({ item, onOpen, onEdit, onDelete, onMove, onDragStart, onDragEnd }) {
@@ -547,7 +312,7 @@ function FolderSection({ title, materials, folder, onRename, onDelete, onOpenMat
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2 cursor-pointer" onClick={onToggleCollapse}>
           <span className="text-gray-600 dark:text-gray-400">
-            {collapsed ? '►' : '▼'}
+            {collapsed ? '▷' : '▼'}
           </span>
           <h2 className="text-xl font-semibold dark:text-gray-200">{title}</h2>
         </div>
@@ -589,9 +354,90 @@ function FolderSection({ title, materials, folder, onRename, onDelete, onOpenMat
 }
 
 // ============================================================
-// Main component
+// Edit dialog (title + icon) — использует вынесенный IconPicker
+// ============================================================
+function EditMaterialModal({ material, onClose, onSave }) {
+  const [editTitle, setEditTitle] = useState('');
+  const [selectedIcon, setSelectedIcon] = useState(null);
+  const [customIcon, setCustomIcon] = useState(null);
+
+  useEffect(() => {
+    if (!material) return;
+    setEditTitle(material.title);
+    if (PRESET_ICONS.includes(material.icon)) {
+      setSelectedIcon(material.icon);
+      setCustomIcon(null);
+    } else {
+      setSelectedIcon(null);
+      setCustomIcon(material.icon);
+    }
+  }, [material]);
+
+  if (!material) return null;
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const icon = customIcon || selectedIcon || PRESET_ICONS[0];
+    onSave({ title: editTitle, icon });
+  };
+
+  return (
+    <AnimatePresence>
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.9 }}
+          transition={{ duration: 0.2 }}
+          className="bg-white dark:bg-gray-800 rounded max-w-md w-full"
+        >
+          <div className="flex justify-between p-4 border-b dark:border-gray-700">
+            <h2 className="text-xl font-bold dark:text-white">Редактирование</h2>
+            <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
+              ✕
+            </button>
+          </div>
+          <form onSubmit={handleSubmit} className="p-4 space-y-4">
+            <input
+              type="text"
+              placeholder="Название"
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              required
+            />
+            <IconPicker
+              selectedIcon={selectedIcon}
+              customIcon={customIcon}
+              onSelectPreset={(icon) => {
+                setSelectedIcon(icon);
+                setCustomIcon(null);
+              }}
+              onCustomFile={(dataUrl) => {
+                setCustomIcon(dataUrl);
+                setSelectedIcon(null);
+              }}
+            />
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" onClick={onClose} className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
+                Отмена
+              </button>
+              <button type="submit" className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+                Сохранить
+              </button>
+            </div>
+          </form>
+        </motion.div>
+      </div>
+    </AnimatePresence>
+  );
+}
+
+// ============================================================
+// Главный компонент Library
 // ============================================================
 export default function Library() {
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
 
   const [materials, setMaterials] = useState([]);
@@ -614,10 +460,7 @@ export default function Library() {
 
   const [movingMaterial, setMovingMaterial] = useState(null);
 
-  // Состояние для сворачивания папок
   const [collapsedFolders, setCollapsedFolders] = useState(new Set());
-
-  // Для drag-and-drop
   const [dragOverTarget, setDragOverTarget] = useState(null);
 
   const [messageModal, setMessageModal] = useState({
@@ -636,7 +479,6 @@ export default function Library() {
     setMessageModal(prev => ({ ...prev, isOpen: false }));
   };
 
-  // Переключение сворачивания папки
   const toggleCollapse = (key) => {
     setCollapsedFolders(prev => {
       const newSet = new Set(prev);
@@ -651,15 +493,11 @@ export default function Library() {
 
   // ===== Загрузка данных =====
   const loadMaterials = useCallback(async () => {
-    const response = await fetch('/api/materials');
-    if (response.ok) return await response.json();
-    throw new Error('Failed to load materials');
+    return await apiFetch('/api/materials');
   }, []);
 
   const loadFolders = useCallback(async () => {
-    const response = await fetch('/api/folders');
-    if (response.ok) return await response.json();
-    throw new Error('Failed to load folders');
+    return await apiFetch('/api/folders');
   }, []);
 
   const loadAllData = useCallback(async () => {
@@ -693,16 +531,10 @@ export default function Library() {
   // ===== CRUD для папок =====
   const createFolder = async (name) => {
     try {
-      const response = await fetch('/api/folders', {
+      await apiFetch('/api/folders', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
       });
-      const data = await response.json();
-      if (!response.ok) {
-        showMessage('error', 'Ошибка', data.error || 'Не удалось создать папку', true);
-        return;
-      }
       await loadAllData();
       showMessage('success', 'Успешно', `Папка "${name}" создана`);
     } catch (err) {
@@ -713,15 +545,10 @@ export default function Library() {
 
   const renameFolder = async (folderId, newName) => {
     try {
-      const response = await fetch(`/api/folders/${folderId}`, {
+      await apiFetch(`/api/folders/${folderId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newName }),
       });
-      if (!response.ok) {
-        showMessage('error', 'Ошибка', 'Не удалось переименовать папку', true);
-        return;
-      }
       await loadAllData();
       showMessage('success', 'Успешно', `Папка переименована в "${newName}"`);
     } catch (err) {
@@ -732,11 +559,7 @@ export default function Library() {
 
   const deleteFolder = async (folderId) => {
     try {
-      const response = await fetch(`/api/folders/${folderId}`, { method: 'DELETE' });
-      if (!response.ok) {
-        showMessage('error', 'Ошибка', 'Не удалось удалить папку', true);
-        return;
-      }
+      await apiFetch(`/api/folders/${folderId}`, { method: 'DELETE' });
       await loadAllData();
       showMessage('success', 'Успешно', 'Папка удалена, материалы остались без папки');
     } catch (err) {
@@ -748,15 +571,10 @@ export default function Library() {
   // ===== Работа с материалами =====
   const moveMaterialToFolder = async (materialId, folderId) => {
     try {
-      const response = await fetch(`/api/materials/${materialId}/folder`, {
+      await apiFetch(`/api/materials/${materialId}/folder`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ folder_id: folderId }),
       });
-      if (!response.ok) {
-        showMessage('error', 'Ошибка', 'Не удалось переместить материал', true);
-        return;
-      }
       await loadAllData();
       showMessage('success', 'Успешно', 'Материал перемещён');
     } catch (err) {
@@ -767,15 +585,10 @@ export default function Library() {
 
   const saveMaterialEdit = async (materialId, { title, icon }) => {
     try {
-      const response = await fetch(`/api/materials/${materialId}`, {
+      await apiFetch(`/api/materials/${materialId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title, icon }),
       });
-      if (!response.ok) {
-        showMessage('error', 'Ошибка', 'Не удалось обновить материал', true);
-        return;
-      }
       await loadAllData();
       setEditMaterial(null);
       showMessage('success', 'Успешно', 'Материал обновлён');
@@ -787,11 +600,7 @@ export default function Library() {
 
   const deleteMaterial = async (materialId) => {
     try {
-      const response = await fetch(`/api/materials/${materialId}`, { method: 'DELETE' });
-      if (!response.ok) {
-        showMessage('error', 'Ошибка', 'Не удалось удалить материал', true);
-        return;
-      }
+      await apiFetch(`/api/materials/${materialId}`, { method: 'DELETE' });
       await loadAllData();
       showMessage('success', 'Успешно', 'Материал удалён');
     } catch (err) {
@@ -812,16 +621,10 @@ export default function Library() {
           ? { title: payload.title, content: payload.content, icon: payload.icon }
           : { youtube_url: payload.youtube_url, title: payload.title, icon: payload.icon };
 
-      const response = await fetch(endpoint, {
+      await apiFetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      const data = await response.json();
-      if (!data.success) {
-        showMessage('error', 'Ошибка', 'Не удалось импортировать материал. Проверьте данные.', true);
-        return;
-      }
       await loadAllData();
       setImportType(null);
       showMessage('success', 'Успешно', `Материал "${payload.title || 'без названия'}" успешно импортирован`);
@@ -843,7 +646,8 @@ export default function Library() {
   const groupedByFolder = useMemo(() => {
     const grouped = new Map();
     for (const mat of filteredMaterials) {
-      const key = mat.folder_id == null ? 'none' : String(mat.folder_id);
+      // ИСПРАВЛЕНО: используем folderId вместо folder_id
+      const key = mat.folderId == null ? 'none' : String(mat.folderId);
       if (!grouped.has(key)) grouped.set(key, []);
       grouped.get(key).push(mat);
     }
@@ -863,8 +667,9 @@ export default function Library() {
     setDragOverTarget(null);
     const material = materials.find(m => m.id == materialId);
     if (!material) return;
-    if ((folderId === null && material.folder_id === null) ||
-        (folderId !== null && material.folder_id === folderId)) {
+    // ИСПРАВЛЕНО: используем folderId вместо folder_id
+    if ((folderId === null && material.folderId === null) ||
+        (folderId !== null && material.folderId === folderId)) {
       return;
     }
     await moveMaterialToFolder(materialId, folderId);
@@ -877,7 +682,14 @@ export default function Library() {
       <div className="max-w-6xl mx-auto">
         <div className="flex justify-between items-center mb-8 flex-wrap gap-4">
           <h1 className="text-4xl font-bold dark:text-white">Библиотека</h1>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-4 flex-wrap">
+            <span className="text-sm dark:text-gray-300">👋 {user?.username}</span>
+            <button
+              onClick={logout}
+              className="text-sm text-red-600 dark:text-red-400 hover:underline"
+            >
+              Выйти
+            </button>
             <button
               onClick={() => {
                 setFolderToRename(null);
@@ -939,7 +751,6 @@ export default function Library() {
           </div>
         ) : (
           <>
-            {/* Секция "Без папки" */}
             {groupedByFolder.has('none') && (
               <FolderSection
                 title="📁 Без папки"
@@ -957,10 +768,9 @@ export default function Library() {
                 onToggleCollapse={() => toggleCollapse('none')}
               />
             )}
-            {/* Папки */}
             {folders.map((folder) => {
               const items = groupedByFolder.get(String(folder.id)) || [];
-              if (items.length === 0 && searchTerm !== '') return null; // скрываем пустые папки при поиске
+              if (items.length === 0 && searchTerm !== '') return null;
               return (
                 <FolderSection
                   key={folder.id}
@@ -987,8 +797,15 @@ export default function Library() {
         )}
       </div>
 
-      <ImportModal
-        importType={importType}
+      {/* Новые модалки импорта */}
+      <TextImportModal
+        isOpen={importType === 'text'}
+        loading={importing}
+        onClose={() => setImportType(null)}
+        onSubmit={handleImport}
+      />
+      <YouTubeImportModal
+        isOpen={importType === 'youtube'}
         loading={importing}
         onClose={() => setImportType(null)}
         onSubmit={handleImport}
@@ -1022,7 +839,7 @@ export default function Library() {
       <MoveToFolderModal
         isOpen={!!movingMaterial}
         folders={folders}
-        currentFolderId={movingMaterial?.folder_id ?? null}
+        currentFolderId={movingMaterial?.folderId ?? null}
         onClose={() => setMovingMaterial(null)}
         onMove={async (folderId) => {
           if (movingMaterial) await moveMaterialToFolder(movingMaterial.id, folderId);

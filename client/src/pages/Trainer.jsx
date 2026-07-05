@@ -1,8 +1,11 @@
-// client/src/pages/Trainer.jsx
 import { useState, useEffect } from 'react';
 import MatchingGame from '../components/MatchingGame';
+import { apiFetch } from '../utils/api';
+import { useAuth } from '../context/AuthContext';
+import { Link } from 'react-router-dom';
 
 export default function Trainer() {
+  const { user, logout } = useAuth();
   const [sourceType, setSourceType] = useState('all');
   const [selectedMaterialId, setSelectedMaterialId] = useState('');
   const [materialsList, setMaterialsList] = useState([]);
@@ -12,8 +15,7 @@ export default function Trainer() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    fetch('/api/materials')
-      .then(res => res.json())
+    apiFetch('/api/materials')
       .then(data => setMaterialsList(data))
       .catch(err => console.error('Failed to load materials:', err));
   }, []);
@@ -26,9 +28,7 @@ export default function Trainer() {
       if (sourceType === 'material' && selectedMaterialId) {
         url += `?source_text_id=${selectedMaterialId}`;
       }
-      const res = await fetch(url);
-      if (!res.ok) throw new Error('Failed to fetch words');
-      const data = await res.json();
+      const data = await apiFetch(url);
       const words = data.words || [];
       if (words.length < 2) {
         setError('Недостаточно слов для тренировки (нужно минимум 2 пары).');
@@ -56,6 +56,21 @@ export default function Trainer() {
 
   return (
     <div className="max-w-2xl mx-auto py-8 px-4">
+      <div className="flex justify-between items-center mb-6">
+        <Link to="/" className="text-blue-600 dark:text-blue-400 hover:underline">
+          ← Назад в библиотеку
+        </Link>
+        <div className="flex items-center gap-3">
+          <span className="text-sm dark:text-gray-300">👋 {user?.username}</span>
+          <button
+            onClick={logout}
+            className="text-sm text-red-600 dark:text-red-400 hover:underline"
+          >
+            Выйти
+          </button>
+        </div>
+      </div>
+
       <h1 className="text-2xl font-bold mb-6 text-gray-900 dark:text-white">Тренажёр немецких слов</h1>
       
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">

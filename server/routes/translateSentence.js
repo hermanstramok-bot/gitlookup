@@ -1,36 +1,45 @@
-import express from 'express';
-import fetch from 'node-fetch';
+const router = require('express').Router();
+const fetch = require('node-fetch'); // <-- добавлено
 
-const router = express.Router();
+// ─── Одиночный перевод ──────────────────────────────────────────────────────
+router.post('/translate-sentence', async (req, res) => {
+  const { sentence, sentences } = req.body;
 
-router.post('/', async (req, res) => {
+  // Батч-перевод
+  if (sentences && Array.isArray(sentences)) {
+    try {
+      const translations = await Promise.all(
+        sentences.map(async (text) => {
+          const response = await fetch(
+            `https://translate.googleapis.com/translate_a/single?client=gtx&sl=de&tl=ru&dt=t&q=${encodeURIComponent(text)}`
+          );
+          const data = await response.json();
+          return data[0]?.[0]?.[0] || '';
+        })
+      );
+      return res.json({ translations });
+    } catch (err) {
+      console.error('Batch translation error:', err);
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
+  // Одиночный запрос
+  if (!sentence) {
+    return res.status(400).json({ error: 'Missing sentence parameter' });
+  }
+
   try {
-    const { sentence } = req.body;
-    if (!sentence || typeof sentence !== 'string' || sentence.trim().length === 0) {
-      return res.status(400).json({ error: 'No valid sentence provided' });
-    }
-
-    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=de&tl=ru&dt=t&q=${encodeURIComponent(sentence)}`;
-    const response = await fetch(url);
+    const response = await fetch(
+      `https://translate.googleapis.com/translate_a/single?client=gtx&sl=de&tl=ru&dt=t&q=${encodeURIComponent(sentence)}`
+    );
     const data = await response.json();
-
-    // Формат ответа Google: [[["translated text","original",...]]]
-    let translated = '';
-    if (data && data[0] && data[0][0] && data[0][0][0]) {
-      translated = data[0][0][0];
-    } else {
-      translated = 'Translation failed';
-    }
-
-    res.json({
-      original: sentence,
-      translated: translated,
-      detectedSourceLang: 'de'
-    });
-  } catch (error) {
-    console.error('Google Translate error:', error);
-    res.status(500).json({ error: 'Translation failed' });
+    const translated = data[0]?.[0]?.[0] || '';
+    res.json({ translation: translated }); // единое поле translation
+  } catch (err) {
+    console.error('Translation error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
-export default router;
+module.exports = router;
