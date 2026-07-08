@@ -66,11 +66,11 @@ router.post('/import/youtube', authenticateToken, async (req, res) => {
   const commands = [
     {
       name: 'manual subs',
-      cmd: `python -m yt_dlp --write-subs --skip-download --sub-langs "de,en,ru" -o "%(title)s" "${youtube_url}"`
+      cmd: `yt-dlp --write-subs --skip-download --sub-langs "de,en,ru" -o "%(title)s" "${youtube_url}"`
     },
     {
       name: 'auto subs',
-      cmd: `python -m yt_dlp --write-auto-subs --skip-download --sub-langs "de,en,ru" -o "%(title)s" "${youtube_url}"`
+      cmd: `yt-dlp --write-auto-subs --skip-download --sub-langs "de,en,ru" -o "%(title)s" "${youtube_url}"`
     }
   ];
 
