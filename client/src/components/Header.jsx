@@ -8,7 +8,7 @@ export default function Header() {
   const isActive = (path) => location.pathname === path;
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  // Для десктопного подчёркивания (только на больших экранах)
+  // Для десктопного подчёркивания
   const libraryRef = useRef(null);
   const vocabRef = useRef(null);
   const trainerRef = useRef(null);
@@ -131,13 +131,13 @@ export default function Header() {
     <header className="bg-blue-900 dark:bg-gray-900 text-white shadow-lg sticky top-0 z-10 transition-colors duration-300">
       <div className="w-full px-4 sm:px-6">
         <div className="flex justify-between items-center h-16">
-          {/* Логотип (всегда виден) */}
+          {/* Логотип */}
           <Link to="/" className="flex items-center gap-2 hover:opacity-90 transition">
             <img src="/icons/doggy.png" alt="Doggy" className="h-7 w-auto" />
             <span className="font-bold text-lg">LeseLearn</span>
           </Link>
 
-          {/* Десктопная навигация (показывается от md-брейкпоинта) */}
+          {/* Десктопная навигация */}
           <nav className="hidden md:flex gap-6 items-center relative">
             <Link
               ref={libraryRef}
@@ -160,6 +160,15 @@ export default function Header() {
             >
               Тренажёр
             </Link>
+
+            {/* Флаг немецкого языка между Словарём и Настройками */}
+            <img
+              src="/icons/lang/german_circle.png"
+              alt="язык: немецкий"
+              className="h-6 w-6"
+              title="Изучаемый язык: немецкий"
+            />
+
             <Link
               to="/settings"
               className="text-sm font-medium text-white transition-colors hover:text-blue-200 dark:hover:text-gray-300 p-1"
@@ -170,9 +179,11 @@ export default function Header() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
             </Link>
+
             <div className="ml-2">
               <ThemeToggle />
             </div>
+
             {underlineStyle.width > 0 && (
               <motion.div
                 className="absolute bottom-0 h-0.5 bg-white rounded-full"
@@ -183,7 +194,7 @@ export default function Header() {
             )}
           </nav>
 
-          {/* Мобильная кнопка-бургер (видна только на маленьких экранах) */}
+          {/* Мобильная кнопка-бургер */}
           <button
             onClick={() => setIsMenuOpen(true)}
             className="md:hidden flex flex-col justify-center items-center w-8 h-8 gap-1 text-white focus:outline-none"
@@ -195,7 +206,7 @@ export default function Header() {
         </div>
       </div>
 
-      {/* Мобильное выезжающее меню */}
+      {/* Мобильное меню */}
       <MobileMenu />
     </header>
   );

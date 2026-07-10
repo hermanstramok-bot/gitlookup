@@ -8,13 +8,11 @@ export default function Settings() {
 
   const [activeTab, setActiveTab] = useState('account');
 
-  // Реальный пользователь из контекста
   const currentUser = {
     username: user?.username || 'Гость',
-    // email и другие поля пока отсутствуют — оставим заглушки или уберём
   };
 
-  // Настройки языков (локальные)
+  // Настройки языков
   const [interfaceLang, setInterfaceLang] = useState(() => {
     return localStorage.getItem('interfaceLang') || 'ru';
   });
@@ -25,28 +23,36 @@ export default function Settings() {
     return localStorage.getItem('translationLang') || 'ru';
   });
 
+  // Настройки Ридера
+  const [readerFont, setReaderFont] = useState(() => {
+    return localStorage.getItem('readerFont') || 'sans';
+  });
+  const [readerVoice, setReaderVoice] = useState(() => {
+    return localStorage.getItem('readerVoice') || 'male';
+  });
+
   useEffect(() => {
     localStorage.setItem('interfaceLang', interfaceLang);
     localStorage.setItem('targetLang', targetLang);
     localStorage.setItem('translationLang', translationLang);
-  }, [interfaceLang, targetLang, translationLang]);
+    localStorage.setItem('readerFont', readerFont);
+    localStorage.setItem('readerVoice', readerVoice);
+  }, [interfaceLang, targetLang, translationLang, readerFont, readerVoice]);
 
-  // Редактирование ника (локально, только для отображения)
+  // Редактирование ника
   const [editNickname, setEditNickname] = useState(false);
   const [newNickname, setNewNickname] = useState(currentUser.username);
 
   const handleSaveNickname = () => {
     if (newNickname.trim()) {
-      // TODO: отправить запрос на сервер для обновления имени
-      // пока просто сохраняем локально
       alert('Смена ника временно недоступна');
     }
     setEditNickname(false);
   };
 
   const handleLogout = () => {
-    logout();          // очищает токен и пользователя
-    navigate('/login'); // перенаправляем на страницу входа
+    logout();
+    navigate('/login');
   };
 
   const handleChangePassword = () => {
@@ -56,7 +62,8 @@ export default function Settings() {
   const menuItems = [
     { id: 'account', label: 'Аккаунт', icon: '👤' },
     { id: 'languages', label: 'Языки', icon: '🌐' },
-    { id: 'subscription', label: 'Подписка', icon: '💎' }
+    { id: 'subscription', label: 'Подписка', icon: '💎' },
+    { id: 'reader', label: 'Ридер', icon: '📖' },
   ];
 
   return (
@@ -77,9 +84,10 @@ export default function Settings() {
                   onClick={() => setActiveTab(item.id)}
                   className={`
                     w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors
-                    ${activeTab === item.id
-                      ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium'
-                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    ${
+                      activeTab === item.id
+                        ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium'
+                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                     }
                   `}
                 >
@@ -96,19 +104,18 @@ export default function Settings() {
             {activeTab === 'account' && (
               <div className="space-y-6">
                 <div className="flex flex-col items-center sm:flex-row sm:items-start gap-6 pb-6 border-b border-gray-200 dark:border-gray-700">
-                  {/* Аватар (заглушка) */}
+                  {/* Аватар с весёлой собачкой */}
                   <div className="flex-shrink-0">
                     <img
-                      src="/icons/default-avatar.png"
-                      alt="Avatar"
+                      src="/icons/happy.doggy.png"
+                      alt="Аватар"
                       className="w-24 h-24 rounded-full object-cover border-2 border-gray-300 dark:border-gray-600"
-                      onError={(e) => { e.target.src = '/icons/default-avatar.png'; }}
                     />
                     <button className="mt-2 text-sm text-blue-600 dark:text-blue-400 hover:underline">
                       Сменить аватар
                     </button>
                   </div>
-                  
+
                   {/* Данные пользователя */}
                   <div className="flex-1 space-y-2">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -119,7 +126,7 @@ export default function Settings() {
                             type="text"
                             value={newNickname}
                             onChange={(e) => setNewNickname(e.target.value)}
-                            className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700"
+                            className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                             autoFocus
                           />
                           <button
@@ -148,8 +155,10 @@ export default function Settings() {
                       )}
                     </div>
                     <div className="flex flex-col gap-1 text-sm">
-                      <p><span className="text-gray-600 dark:text-gray-400">Email:</span> не указан</p>
-                      <p>
+                      <p className="text-gray-600 dark:text-gray-400">
+                        <span className="text-gray-600 dark:text-gray-400">Email:</span> не указан
+                      </p>
+                      <p className="text-gray-600 dark:text-gray-400">
                         <span className="text-gray-600 dark:text-gray-400">Пароль:</span> ••••••••
                         <button
                           onClick={handleChangePassword}
@@ -238,7 +247,9 @@ export default function Settings() {
                     <span className="text-3xl">💎</span>
                     <div>
                       <h3 className="text-xl font-bold text-yellow-800 dark:text-yellow-400">Gold</h3>
-                      <p className="text-sm text-gray-600 dark:text-gray-300">Действует до <strong>01.08.2027</strong></p>
+                      <p className="text-sm text-gray-600 dark:text-gray-300">
+                        Действует до <strong>01.08.2027</strong>
+                      </p>
                     </div>
                   </div>
                   <div className="space-y-2 text-sm text-gray-700 dark:text-gray-300">
@@ -253,6 +264,64 @@ export default function Settings() {
                     Управление подпиской
                   </button>
                 </div>
+              </div>
+            )}
+
+            {/* Новая вкладка: Ридер */}
+            {activeTab === 'reader' && (
+              <div className="space-y-6">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Настройки Ридера</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Эти параметры будут использоваться в режиме чтения текстов.
+                </p>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Шрифт для чтения
+                  </label>
+                  <select
+                    value={readerFont}
+                    onChange={(e) => setReaderFont(e.target.value)}
+                    className="w-full md:w-64 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  >
+                    <option value="sans">Sans-serif (без засечек)</option>
+                    <option value="serif">Serif (с засечками)</option>
+                    <option value="mono">Monospace (моноширинный)</option>
+                    <option value="dyslexic">Dyslexic (для дислексии)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Озвучка (голос)
+                  </label>
+                  <div className="flex gap-6">
+                    <label className="inline-flex items-center text-gray-700 dark:text-gray-300">
+                      <input
+                        type="radio"
+                        value="male"
+                        checked={readerVoice === 'male'}
+                        onChange={() => setReaderVoice('male')}
+                        className="form-radio text-blue-600 dark:text-blue-400"
+                      />
+                      <span className="ml-2">Мужской</span>
+                    </label>
+                    <label className="inline-flex items-center text-gray-700 dark:text-gray-300">
+                      <input
+                        type="radio"
+                        value="female"
+                        checked={readerVoice === 'female'}
+                        onChange={() => setReaderVoice('female')}
+                        className="form-radio text-blue-600 dark:text-blue-400"
+                      />
+                      <span className="ml-2">Женский</span>
+                    </label>
+                  </div>
+                </div>
+
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-4">
+                  Настройки сохраняются автоматически
+                </p>
               </div>
             )}
           </div>
