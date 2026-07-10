@@ -9,6 +9,21 @@ import { useWordPanel } from '../hooks/useWordPanel';
 import { usePagination } from '../hooks/usePagination';
 import { normalizeWord } from '../utils/normalizeWord';
 
+// --- Ключи localStorage для персистентности режима/времени на видео ---
+const viewModeKey = (id) => `videoreader_last_mode_${id}`;
+const videoTimeKey = (id) => `videoreader_time_${id}`;
+
+// Достаём координаты как из мышиных, так и из тач-событий.
+const getPoint = (e) => {
+  if (e.touches && e.touches.length) {
+    return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }
+  if (e.changedTouches && e.changedTouches.length) {
+    return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+  }
+  return { x: e.clientX, y: e.clientY };
+};
+
 export default function VideoReader() {
   const { user, logout } = useAuth();
   const { id } = useParams();
@@ -21,6 +36,7 @@ export default function VideoReader() {
   const videoTimeRef = useRef(0);
   const lastSubIndexRef = useRef(-1);
 
+  // Дефолт при самом первом открытии материала — субтитры.
   const [viewMode, setViewMode] = useState('subtitles');
 
   const [isVideoMinimized, setIsVideoMinimized] = useState(false);
@@ -92,69 +108,93 @@ export default function VideoReader() {
     return map;
   }, [savedWords]);
 
+  // Сохраняем текущее время видео и в ref (для мгновенного использования
+  // в рамках сессии), и в localStorage (чтобы восстановить после перезахода).
   const saveCurrentTime = useCallback(() => {
     if (playerRef.current) {
       try {
         const t = playerRef.current.getCurrentTime();
-        if (t > 0) videoTimeRef.current = t;
+        if (t > 0) {
+          videoTimeRef.current = t;
+          localStorage.setItem(videoTimeKey(id), String(t));
+        }
       } catch {}
     }
-  }, []);
+  }, [id]);
 
   const switchViewMode = () => {
     saveCurrentTime();
-    setViewMode(m => m === 'full' ? 'subtitles' : 'full');
+    setViewMode(m => {
+      const next = m === 'full' ? 'subtitles' : 'full';
+      localStorage.setItem(viewModeKey(id), next);
+      return next;
+    });
   };
 
-  const onMouseDownDrag = useCallback((e) => {
+  // --- Drag (перетаскивание окна видео), с поддержкой мыши и тача ---
+  const onDragStart = useCallback((e) => {
     if (!e.target.closest('.video-drag-handle')) return;
-    e.preventDefault();
+    if (e.cancelable) e.preventDefault();
+    const point = getPoint(e);
     const rect = videoRef.current.getBoundingClientRect();
-    const offsetX = e.clientX - rect.left;
-    const offsetY = e.clientY - rect.top;
+    const offsetX = point.x - rect.left;
+    const offsetY = point.y - rect.top;
     dragging.current = true;
     dragOffset.current = { x: offsetX, y: offsetY };
+
     const onMove = (e) => {
       if (!dragging.current) return;
+      if (e.cancelable) e.preventDefault();
+      const p = getPoint(e);
       const el = videoRef.current;
       if (!el) return;
       const w = el.offsetWidth;
       const h = el.offsetHeight;
-      const x = Math.max(0, Math.min(e.clientX - offsetX, window.innerWidth - w));
-      const y = Math.max(0, Math.min(e.clientY - offsetY, window.innerHeight - h));
+      const x = Math.max(0, Math.min(p.x - offsetX, window.innerWidth - w));
+      const y = Math.max(0, Math.min(p.y - offsetY, window.innerHeight - h));
       el.style.left = x + 'px';
       el.style.top  = y + 'px';
       videoPositionRef.current = { x, y };
     };
-    const onUp = () => {
+    const onEnd = () => {
       dragging.current = false;
       document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('mouseup', onEnd);
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend', onEnd);
+      document.removeEventListener('touchcancel', onEnd);
       setVideoPosition({ ...videoPositionRef.current });
     };
     document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+    document.addEventListener('mouseup', onEnd);
+    document.addEventListener('touchmove', onMove, { passive: false });
+    document.addEventListener('touchend', onEnd);
+    document.addEventListener('touchcancel', onEnd);
   }, []);
 
-  const onMouseDownResize = useCallback((e) => {
-    e.preventDefault();
+  // --- Resize (изменение размера окна видео), с поддержкой мыши и тача ---
+  const onResizeStart = useCallback((e) => {
+    if (e.cancelable) e.preventDefault();
     e.stopPropagation();
+    const point = getPoint(e);
     const el = videoRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
     const aspect = rect.width / rect.height;
     resizing.current = true;
     resizeStart.current = {
-      x: e.clientX,
-      y: e.clientY,
+      x: point.x,
+      y: point.y,
       width: rect.width,
       height: rect.height,
       aspect: aspect,
     };
     const onMove = (e) => {
       if (!resizing.current) return;
-      const dx = e.clientX - resizeStart.current.x;
-      const dy = e.clientY - resizeStart.current.y;
+      if (e.cancelable) e.preventDefault();
+      const p = getPoint(e);
+      const dx = p.x - resizeStart.current.x;
+      const dy = p.y - resizeStart.current.y;
       const newWidth = Math.max(280, resizeStart.current.width + dx);
       const newHeight = newWidth / resizeStart.current.aspect;
       const maxW = window.innerWidth - videoPositionRef.current.x - 20;
@@ -165,15 +205,21 @@ export default function VideoReader() {
       el.style.height = finalH + 'px';
       videoSizeRef.current = { width: finalW, height: finalH };
     };
-    const onUp = () => {
+    const onEnd = () => {
       resizing.current = false;
       document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('mouseup', onEnd);
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend', onEnd);
+      document.removeEventListener('touchcancel', onEnd);
       saveCurrentTime();
       setVideoSize({ ...videoSizeRef.current });
     };
     document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+    document.addEventListener('mouseup', onEnd);
+    document.addEventListener('touchmove', onMove, { passive: false });
+    document.addEventListener('touchend', onEnd);
+    document.addEventListener('touchcancel', onEnd);
   }, [saveCurrentTime]);
 
   const findActiveSubtitle = useCallback((timeMs) => {
@@ -225,23 +271,39 @@ export default function VideoReader() {
     playerRef.current = event.target;
     if (videoTimeRef.current > 0) {
       event.target.seekTo(videoTimeRef.current, true);
+      // Обновляем активные субтитры/страницу сразу, даже если видео на паузе.
+      setTimeout(syncWithVideo, 300);
     }
   };
 
   const onPlayerStateChange = (event) => {
     if (event.data === 1) {
       if (playerIntervalRef.current) clearInterval(playerIntervalRef.current);
-      playerIntervalRef.current = setInterval(syncWithVideo, 500);
+      playerIntervalRef.current = setInterval(() => {
+        syncWithVideo();
+        saveCurrentTime();
+      }, 500);
     } else {
       if (playerIntervalRef.current) {
         clearInterval(playerIntervalRef.current);
         playerIntervalRef.current = null;
       }
+      // Сохраняем позицию и на паузе/остановке, а не только во время игры.
+      saveCurrentTime();
     }
   };
 
   useEffect(() => {
     isMounted.current = true;
+
+    // Восстанавливаем последний использованный режим и время просмотра для этого материала.
+    const savedMode = localStorage.getItem(viewModeKey(id));
+    setViewMode(savedMode === 'full' ? 'full' : 'subtitles');
+
+    const savedTime = localStorage.getItem(videoTimeKey(id));
+    videoTimeRef.current = savedTime !== null ? Number(savedTime) : 0;
+    lastSubIndexRef.current = -1;
+
     const ac = new AbortController();
     apiFetch(`/api/material/${id}`, { signal: ac.signal })
       .then(d => { if (isMounted.current) setMaterial(d); })
@@ -261,12 +323,28 @@ export default function VideoReader() {
         }
       })
       .catch(e => { if (e.name !== 'AbortError') console.error('vocab:', e); });
+
     return () => {
       isMounted.current = false;
       ac.abort();
+      saveCurrentTime();
       if (playerIntervalRef.current) clearInterval(playerIntervalRef.current);
     };
   }, [id]);
+
+  // Дополнительная подстраховка: сохраняем время при уходе со страницы/сворачивании вкладки.
+  useEffect(() => {
+    const handleBeforeUnload = () => saveCurrentTime();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') saveCurrentTime();
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [saveCurrentTime]);
 
   const handleWordClick = useCallback(async (word, wordIndex, subId) => {
     const subIndex = subtitles.findIndex(s => s.id === subId);
@@ -510,9 +588,13 @@ export default function VideoReader() {
                 width: videoSize.width + 'px',
                 height: isVideoMinimized ? '48px' : videoSize.height + 'px'
               }}
-              onMouseDown={onMouseDownDrag}
+              onMouseDown={onDragStart}
+              onTouchStart={onDragStart}
             >
-              <div className="video-drag-handle cursor-move bg-gray-100 dark:bg-gray-700 px-3 py-2 flex justify-between items-center select-none">
+              <div
+                className="video-drag-handle cursor-move bg-gray-100 dark:bg-gray-700 px-3 py-2 flex justify-between items-center select-none"
+                style={{ touchAction: 'none' }}
+              >
                 <span className="text-sm font-medium dark:text-gray-200">🎬 Видео</span>
                 <button
                   onClick={(e) => { e.stopPropagation(); setIsVideoMinimized(p => !p); }}
@@ -539,9 +621,10 @@ export default function VideoReader() {
               )}
               {!isVideoMinimized && (
                 <div
-                  className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize"
-                  onMouseDown={onMouseDownResize}
-                  style={{ background: 'transparent' }}
+                  className="absolute bottom-0 right-0 w-5 h-5 cursor-se-resize"
+                  onMouseDown={onResizeStart}
+                  onTouchStart={onResizeStart}
+                  style={{ background: 'transparent', touchAction: 'none' }}
                 >
                   <div className="absolute bottom-1 right-1 w-3 h-3 border-r-2 border-b-2 border-gray-400 dark:border-gray-500"></div>
                 </div>
