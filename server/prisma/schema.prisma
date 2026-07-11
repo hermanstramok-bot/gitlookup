@@ -59,6 +59,10 @@ model Material {
   subtitles   Subtitle[]
   vocab       Vocab[]
 
+  // НОВЫЕ ПОЛЯ (добавлены)
+  author      String?   @db.Text              // автор материала (необязательный)
+  status      String    @default("new") @db.VarChar(20) // new, learning, completed
+
   @@map("texts")
 }
 

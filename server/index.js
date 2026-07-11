@@ -14,6 +14,8 @@ const foldersRouter = require('./routes/folders');
 const importRouter = require('./routes/import');
 const materialsRouter = require('./routes/materials');
 const translateRouter = require('./routes/translateSentence');
+const flashcardsRouter = require('./routes/flashcards');
+const gamesRouter = require('./routes/games');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -61,6 +63,10 @@ app.use('/api', foldersRouter);
 app.use('/api', importRouter);
 app.use('/api', materialsRouter);
 app.use('/api', translateRouter);
+
+// ─── Новые роуты для флешкарт и игр ───────────────────────
+app.use('/api/flashcards', flashcardsRouter);
+app.use('/api/games', gamesRouter);
 
 // ─── Офлайн-словарь (оставляем как есть) ──────────────────
 let dictionary = {};

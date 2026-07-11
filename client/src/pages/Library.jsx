@@ -25,7 +25,7 @@ function MessageModal({ isOpen, type, title, message, onClose, showBugReport = f
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.9 }}
             transition={{ duration: 0.2 }}
-            className={`bg-white dark:bg-gray-800 rounded max-w-md w-full border-l-4 ${borderColor}`}
+            className={`bg-white dark:bg-gray-800 rounded-2xl max-w-md w-full border-l-4 ${borderColor}`}
           >
             <div className="p-4 flex items-start gap-3">
               <div className="text-2xl">{icon}</div>
@@ -45,7 +45,7 @@ function MessageModal({ isOpen, type, title, message, onClose, showBugReport = f
             <div className="border-t dark:border-gray-700 p-3 flex justify-end">
               <button
                 onClick={onClose}
-                className="px-4 py-1 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded hover:bg-gray-300 dark:hover:bg-gray-600"
+                className="px-4 py-1 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-full hover:bg-gray-300 dark:hover:bg-gray-600"
               >
                 Закрыть
               </button>
@@ -70,7 +70,7 @@ function ConfirmModal({ isOpen, title = 'Подтверждение', message, c
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.9 }}
             transition={{ duration: 0.2 }}
-            className="bg-white dark:bg-gray-800 rounded max-w-md w-full"
+            className="bg-white dark:bg-gray-800 rounded-2xl max-w-md w-full"
           >
             <div className="p-4 border-b dark:border-gray-700">
               <h2 className="text-xl font-bold dark:text-white">{title}</h2>
@@ -81,13 +81,13 @@ function ConfirmModal({ isOpen, title = 'Подтверждение', message, c
             <div className="border-t dark:border-gray-700 p-4 flex justify-end gap-2">
               <button
                 onClick={onClose}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-200"
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-full hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-200"
               >
                 Отмена
               </button>
               <button
                 onClick={onConfirm}
-                className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                className="px-4 py-2 bg-red-500 text-white rounded-full hover:bg-red-600"
               >
                 {confirmLabel}
               </button>
@@ -124,7 +124,7 @@ function FolderNameModal({ isOpen, onClose, onSave, initialName = '', title = '�
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.9 }}
             transition={{ duration: 0.2 }}
-            className="bg-white dark:bg-gray-800 rounded max-w-md w-full"
+            className="bg-white dark:bg-gray-800 rounded-2xl max-w-md w-full"
           >
             <div className="p-4 border-b dark:border-gray-700">
               <h2 className="text-xl font-bold dark:text-white">{title}</h2>
@@ -135,15 +135,15 @@ function FolderNameModal({ isOpen, onClose, onSave, initialName = '', title = '�
                 placeholder="Название папки"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                 autoFocus
                 required
               />
               <div className="flex justify-end gap-2 mt-4">
-                <button type="button" onClick={onClose} className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
+                <button type="button" onClick={onClose} className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-full dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
                   Отмена
                 </button>
-                <button type="submit" className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+                <button type="submit" className="px-4 py-2 bg-blue-500 text-white rounded-full hover:bg-blue-600">
                   Сохранить
                 </button>
               </div>
@@ -168,7 +168,7 @@ function MoveToFolderModal({ isOpen, onClose, folders, currentFolderId, onMove }
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.9 }}
             transition={{ duration: 0.2 }}
-            className="bg-white dark:bg-gray-800 rounded max-w-md w-full"
+            className="bg-white dark:bg-gray-800 rounded-2xl max-w-md w-full"
           >
             <div className="p-4 border-b dark:border-gray-700">
               <h2 className="text-xl font-bold dark:text-white">Переместить в папку</h2>
@@ -178,7 +178,7 @@ function MoveToFolderModal({ isOpen, onClose, folders, currentFolderId, onMove }
                 <button
                   type="button"
                   onClick={() => onMove(null)}
-                  className={`w-full text-left px-3 py-2 rounded ${
+                  className={`w-full text-left px-3 py-2 rounded-lg ${
                     currentFolderId == null ? 'bg-blue-100 dark:bg-blue-900' : 'hover:bg-gray-100 dark:hover:bg-gray-700'
                   } dark:text-gray-200`}
                 >
@@ -189,7 +189,7 @@ function MoveToFolderModal({ isOpen, onClose, folders, currentFolderId, onMove }
                     key={folder.id}
                     type="button"
                     onClick={() => onMove(folder.id)}
-                    className={`w-full text-left px-3 py-2 rounded ${
+                    className={`w-full text-left px-3 py-2 rounded-lg ${
                       currentFolderId === folder.id ? 'bg-blue-100 dark:bg-blue-900' : 'hover:bg-gray-100 dark:hover:bg-gray-700'
                     } dark:text-gray-200`}
                   >
@@ -198,7 +198,7 @@ function MoveToFolderModal({ isOpen, onClose, folders, currentFolderId, onMove }
                 ))}
               </div>
               <div className="flex justify-end gap-2 mt-4">
-                <button type="button" onClick={onClose} className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
+                <button type="button" onClick={onClose} className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-full dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
                   Отмена
                 </button>
               </div>
@@ -211,9 +211,9 @@ function MoveToFolderModal({ isOpen, onClose, folders, currentFolderId, onMove }
 }
 
 // ============================================================
-// Material card (with drag and drop)
+// Material card (with drag and drop) – с автором и статусом
 // ============================================================
-function MaterialCard({ item, onOpen, onEdit, onDelete, onMove, onDragStart, onDragEnd }) {
+function MaterialCard({ item, onOpen, onEdit, onDelete, onMove, onDragStart, onDragEnd, onToggleStatus }) {
   const formatDate = (dateString) => new Date(dateString).toLocaleDateString();
 
   const handleDragStart = (e) => {
@@ -226,12 +226,19 @@ function MaterialCard({ item, onOpen, onEdit, onDelete, onMove, onDragStart, onD
     if (onDragEnd) onDragEnd();
   };
 
+  const statusMap = {
+    new: { label: 'Новое', className: 'bg-green-100 text-green-700' },
+    learning: { label: 'Изучается', className: 'bg-yellow-100 text-yellow-700' },
+    completed: { label: 'Пройдено', className: 'bg-blue-100 text-blue-700' }
+  };
+  const status = statusMap[item.status] || null;
+
   return (
     <div
       draggable
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
-      className="bg-white dark:bg-gray-800 rounded shadow-md hover:shadow-lg transition cursor-pointer border dark:border-gray-700"
+      className="bg-white dark:bg-gray-800 rounded-2xl shadow-md hover:shadow-lg transition cursor-pointer border dark:border-gray-700"
     >
       <div onClick={onOpen} className="p-3">
         <div className="flex items-center gap-3">
@@ -239,13 +246,26 @@ function MaterialCard({ item, onOpen, onEdit, onDelete, onMove, onDragStart, onD
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between gap-2">
               <h3 className="font-bold text-sm truncate dark:text-white">{item.title}</h3>
-              <span className="text-xs bg-gray-200 dark:bg-gray-600 dark:text-gray-200 px-2 py-0.5 rounded whitespace-nowrap">
+              <span className="text-xs bg-gray-200 dark:bg-gray-600 dark:text-gray-200 px-2 py-0.5 rounded-full whitespace-nowrap">
                 {item.type === 'text' ? 'Текст' : 'Видео'}
               </span>
             </div>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            {item.author && (
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{item.author}</p>
+            )}
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
               {formatDate(item.imported_at || item.createdAt)}
             </p>
+            {status && (
+              <div className="mt-1" onClick={(e) => e.stopPropagation()}>
+                <span
+                  onClick={onToggleStatus}
+                  className={`${status.className} rounded-full px-2 py-0.5 text-xs font-medium cursor-pointer hover:opacity-80 transition`}
+                >
+                  {status.label}
+                </span>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -255,7 +275,7 @@ function MaterialCard({ item, onOpen, onEdit, onDelete, onMove, onDragStart, onD
             e.stopPropagation();
             onEdit();
           }}
-          className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 text-sm"
+          className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 text-sm p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition"
           title="Редактировать"
         >
           ✏️
@@ -265,7 +285,7 @@ function MaterialCard({ item, onOpen, onEdit, onDelete, onMove, onDragStart, onD
             e.stopPropagation();
             onMove();
           }}
-          className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 text-sm"
+          className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 text-sm p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition"
           title="Переместить"
         >
           ➡️
@@ -275,7 +295,7 @@ function MaterialCard({ item, onOpen, onEdit, onDelete, onMove, onDragStart, onD
             e.stopPropagation();
             onDelete();
           }}
-          className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 text-sm"
+          className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 text-sm p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition"
           title="Удалить"
         >
           🗑️
@@ -288,7 +308,7 @@ function MaterialCard({ item, onOpen, onEdit, onDelete, onMove, onDragStart, onD
 // ============================================================
 // Folder section (drag and drop target, with collapsible)
 // ============================================================
-function FolderSection({ title, materials, folder, onRename, onDelete, onOpenMaterial, onEditMaterial, onDeleteMaterial, onMoveMaterial, onDrop, onDragOver, collapsed, onToggleCollapse }) {
+function FolderSection({ title, materials, folder, onRename, onDelete, onOpenMaterial, onEditMaterial, onDeleteMaterial, onMoveMaterial, onDrop, onDragOver, collapsed, onToggleCollapse, onToggleStatus }) {
   const handleDragOver = (e) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
@@ -320,14 +340,14 @@ function FolderSection({ title, materials, folder, onRename, onDelete, onOpenMat
           <div className="flex gap-2">
             <button
               onClick={onRename}
-              className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+              className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition"
               title="Переименовать"
             >
               ✏️
             </button>
             <button
               onClick={onDelete}
-              className="text-sm text-red-600 dark:text-red-400 hover:text-red-800"
+              className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition"
               title="Удалить папку"
             >
               🗑️
@@ -345,6 +365,7 @@ function FolderSection({ title, materials, folder, onRename, onDelete, onOpenMat
               onEdit={() => onEditMaterial(item)}
               onDelete={() => onDeleteMaterial(item)}
               onMove={() => onMoveMaterial(item)}
+              onToggleStatus={() => onToggleStatus(item.id, item.status)}
             />
           ))}
         </div>
@@ -354,12 +375,14 @@ function FolderSection({ title, materials, folder, onRename, onDelete, onOpenMat
 }
 
 // ============================================================
-// Edit dialog (title + icon) — использует вынесенный IconPicker
+// Edit dialog – с автором и статусом
 // ============================================================
 function EditMaterialModal({ material, onClose, onSave }) {
   const [editTitle, setEditTitle] = useState('');
   const [selectedIcon, setSelectedIcon] = useState(null);
   const [customIcon, setCustomIcon] = useState(null);
+  const [author, setAuthor] = useState('');
+  const [status, setStatus] = useState('new');
 
   useEffect(() => {
     if (!material) return;
@@ -371,6 +394,8 @@ function EditMaterialModal({ material, onClose, onSave }) {
       setSelectedIcon(null);
       setCustomIcon(material.icon);
     }
+    setAuthor(material.author || '');
+    setStatus(material.status || 'new');
   }, [material]);
 
   if (!material) return null;
@@ -378,7 +403,12 @@ function EditMaterialModal({ material, onClose, onSave }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     const icon = customIcon || selectedIcon || PRESET_ICONS[0];
-    onSave({ title: editTitle, icon });
+    onSave({
+      title: editTitle,
+      icon,
+      author: author.trim() || null,
+      status
+    });
   };
 
   return (
@@ -389,7 +419,7 @@ function EditMaterialModal({ material, onClose, onSave }) {
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.9 }}
           transition={{ duration: 0.2 }}
-          className="bg-white dark:bg-gray-800 rounded max-w-md w-full"
+          className="bg-white dark:bg-gray-800 rounded-2xl max-w-md w-full"
         >
           <div className="flex justify-between p-4 border-b dark:border-gray-700">
             <h2 className="text-xl font-bold dark:text-white">Редактирование</h2>
@@ -403,9 +433,30 @@ function EditMaterialModal({ material, onClose, onSave }) {
               placeholder="Название"
               value={editTitle}
               onChange={(e) => setEditTitle(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
               required
             />
+            <input
+              type="text"
+              placeholder="Автор (необязательно)"
+              value={author}
+              onChange={(e) => setAuthor(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+            />
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Статус
+              </label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              >
+                <option value="new">Новое</option>
+                <option value="learning">Изучается</option>
+                <option value="completed">Пройдено</option>
+              </select>
+            </div>
             <IconPicker
               selectedIcon={selectedIcon}
               customIcon={customIcon}
@@ -419,10 +470,10 @@ function EditMaterialModal({ material, onClose, onSave }) {
               }}
             />
             <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={onClose} className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
+              <button type="button" onClick={onClose} className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-full dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
                 Отмена
               </button>
-              <button type="submit" className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+              <button type="submit" className="px-4 py-2 bg-blue-500 text-white rounded-full hover:bg-blue-600">
                 Сохранить
               </button>
             </div>
@@ -583,11 +634,33 @@ export default function Library() {
     }
   };
 
-  const saveMaterialEdit = async (materialId, { title, icon }) => {
+  const updateMaterialStatus = async (materialId, currentStatus) => {
+  const nextStatus = { new: 'learning', learning: 'completed', completed: 'new' }[currentStatus] || 'new';
+  try {
+    const material = materials.find(m => m.id === materialId);
+    if (!material) return;
+    await apiFetch(`/api/materials/${materialId}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        title: material.title,
+        icon: material.icon,
+        author: material.author || null,
+        status: nextStatus
+      }),
+    });
+    await loadAllData();
+    // showMessage убран
+  } catch (err) {
+    console.error(err);
+    showMessage('error', 'Ошибка', 'Не удалось обновить статус', true);
+  }
+};
+
+  const saveMaterialEdit = async (materialId, data) => {
     try {
       await apiFetch(`/api/materials/${materialId}`, {
         method: 'PUT',
-        body: JSON.stringify({ title, icon }),
+        body: JSON.stringify(data), // { title, icon, author, status }
       });
       await loadAllData();
       setEditMaterial(null);
@@ -616,10 +689,17 @@ export default function Library() {
     setImporting(true);
     try {
       const endpoint = payload.type === 'text' ? '/api/import/text' : '/api/import/youtube';
-      const body =
-        payload.type === 'text'
-          ? { title: payload.title, content: payload.content, icon: payload.icon }
-          : { youtube_url: payload.youtube_url, title: payload.title, icon: payload.icon };
+      const body = {
+        title: payload.title,
+        icon: payload.icon,
+        author: payload.author || null,
+        status: payload.status || 'new',
+      };
+      if (payload.type === 'text') {
+        body.content = payload.content;
+      } else {
+        body.youtube_url = payload.youtube_url;
+      }
 
       await apiFetch(endpoint, {
         method: 'POST',
@@ -646,7 +726,6 @@ export default function Library() {
   const groupedByFolder = useMemo(() => {
     const grouped = new Map();
     for (const mat of filteredMaterials) {
-      // ИСПРАВЛЕНО: используем folderId вместо folder_id
       const key = mat.folderId == null ? 'none' : String(mat.folderId);
       if (!grouped.has(key)) grouped.set(key, []);
       grouped.get(key).push(mat);
@@ -667,7 +746,6 @@ export default function Library() {
     setDragOverTarget(null);
     const material = materials.find(m => m.id == materialId);
     if (!material) return;
-    // ИСПРАВЛЕНО: используем folderId вместо folder_id
     if ((folderId === null && material.folderId === null) ||
         (folderId !== null && material.folderId === folderId)) {
       return;
@@ -695,25 +773,25 @@ export default function Library() {
                 setFolderToRename(null);
                 setFolderModalOpen(true);
               }}
-              className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded flex items-center gap-2"
+              className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-full flex items-center gap-2"
             >
               + Папка
             </button>
             <div className="relative" ref={dropdownRef}>
               <button
                 onClick={() => setDropdownOpen((prev) => !prev)}
-                className="bg-green-500 hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-700 text-white font-bold py-2 px-4 rounded flex items-center gap-2"
+                className="bg-green-500 hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-700 text-white font-bold py-2 px-4 rounded-full flex items-center gap-2"
               >
                 <span>+</span> Импорт
               </button>
               {dropdownOpen && (
-                <div className="absolute right-0 mt-2 w-40 bg-white dark:bg-gray-800 rounded shadow-lg z-10 border dark:border-gray-600">
+                <div className="absolute right-0 mt-2 w-40 bg-white dark:bg-gray-800 rounded-2xl shadow-lg z-10 border dark:border-gray-600">
                   <button
                     onClick={() => {
                       setImportType('text');
                       setDropdownOpen(false);
                     }}
-                    className="block w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200"
+                    className="block w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200 rounded-t-2xl"
                   >
                     📖 Текст
                   </button>
@@ -722,7 +800,7 @@ export default function Library() {
                       setImportType('youtube');
                       setDropdownOpen(false);
                     }}
-                    className="block w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200"
+                    className="block w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200 rounded-b-2xl"
                   >
                     ▶️ YouTube
                   </button>
@@ -738,7 +816,7 @@ export default function Library() {
             placeholder="Поиск..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
           />
         </div>
 
@@ -766,6 +844,7 @@ export default function Library() {
                 onDragOver={handleDragOver}
                 collapsed={collapsedFolders.has('none')}
                 onToggleCollapse={() => toggleCollapse('none')}
+                onToggleStatus={updateMaterialStatus}
               />
             )}
             {folders.map((folder) => {
@@ -790,6 +869,7 @@ export default function Library() {
                   onDragOver={handleDragOver}
                   collapsed={collapsedFolders.has(folder.id)}
                   onToggleCollapse={() => toggleCollapse(folder.id)}
+                  onToggleStatus={updateMaterialStatus}
                 />
               );
             })}
@@ -797,7 +877,7 @@ export default function Library() {
         )}
       </div>
 
-      {/* Новые модалки импорта */}
+      {/* Модалки импорта */}
       <TextImportModal
         isOpen={importType === 'text'}
         loading={importing}

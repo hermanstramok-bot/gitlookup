@@ -12,6 +12,8 @@ export default function TextImportModal({ isOpen, onClose, onSubmit, loading }) 
   const [customIcon, setCustomIcon] = useState(null);
   const fileInputRef = useRef(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [author, setAuthor] = useState('');
+  const [status, setStatus] = useState('new');
 
   useEffect(() => {
     if (!isOpen) {
@@ -20,6 +22,8 @@ export default function TextImportModal({ isOpen, onClose, onSubmit, loading }) 
       setSelectedIcon(PRESET_ICONS[0]);
       setCustomIcon(null);
       setIsProcessing(false);
+      setAuthor('');
+      setStatus('new');
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   }, [isOpen]);
@@ -45,7 +49,6 @@ export default function TextImportModal({ isOpen, onClose, onSubmit, loading }) 
         const arrayBuffer = event.target.result;
         const zip = await JSZip.loadAsync(arrayBuffer);
         
-        // Находим все HTML/XHTML файлы в архиве
         const htmlFiles = [];
         zip.forEach((relativePath, zipEntry) => {
           if (!zipEntry.dir) {
@@ -57,7 +60,6 @@ export default function TextImportModal({ isOpen, onClose, onSubmit, loading }) 
         });
 
         if (htmlFiles.length === 0) {
-          // Если нет HTML-файлов, возможно, это EPUB с другими расширениями, пробуем найти текстовые файлы
           const textFiles = [];
           zip.forEach((relativePath, zipEntry) => {
             if (!zipEntry.dir && /\.(txt|html?|xhtml|xml)$/i.test(relativePath)) {
@@ -67,7 +69,6 @@ export default function TextImportModal({ isOpen, onClose, onSubmit, loading }) 
           if (textFiles.length === 0) {
             throw new Error('Не найдено ни одного HTML или текстового файла в EPUB');
           }
-          // Используем найденные текстовые файлы
           let fullText = '';
           for (const filePath of textFiles) {
             try {
@@ -85,14 +86,12 @@ export default function TextImportModal({ isOpen, onClose, onSubmit, loading }) 
           return;
         }
 
-        // Сортируем файлы (обычно по алфавиту, что соответствует порядку глав)
         htmlFiles.sort();
 
         let fullText = '';
         for (const filePath of htmlFiles) {
           try {
             const content = await zip.file(filePath).async('text');
-            // Извлекаем текст из HTML
             const parser = new DOMParser();
             const doc = parser.parseFromString(content, 'text/html');
             const bodyText = doc.body?.textContent || '';
@@ -153,7 +152,14 @@ export default function TextImportModal({ isOpen, onClose, onSubmit, loading }) 
       alert('Заполните все поля');
       return;
     }
-    onSubmit({ type: 'text', title, content: textContent, icon });
+    onSubmit({
+      type: 'text',
+      title,
+      content: textContent,
+      icon,
+      author: author.trim() || null,
+      status
+    });
   };
 
   if (!isOpen) return null;
@@ -166,7 +172,7 @@ export default function TextImportModal({ isOpen, onClose, onSubmit, loading }) 
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.9 }}
           transition={{ duration: 0.2 }}
-          className="bg-white dark:bg-gray-800 rounded max-w-md w-full"
+          className="bg-white dark:bg-gray-800 rounded-2xl max-w-md w-full"
         >
           <div className="flex justify-between p-4 border-b dark:border-gray-700">
             <h2 className="text-xl font-bold dark:text-white">Импорт текста</h2>
@@ -180,10 +186,33 @@ export default function TextImportModal({ isOpen, onClose, onSubmit, loading }) 
               placeholder="Название"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
               required
             />
             
+            <input
+              type="text"
+              placeholder="Автор (необязательно)"
+              value={author}
+              onChange={(e) => setAuthor(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+            />
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Статус
+              </label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              >
+                <option value="new">Новое</option>
+                <option value="learning">Изучается</option>
+                <option value="completed">Пройдено</option>
+              </select>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Загрузите .txt или .epub файл
@@ -195,7 +224,7 @@ export default function TextImportModal({ isOpen, onClose, onSubmit, loading }) 
                 onChange={handleFileUpload}
                 className="block w-full text-sm text-gray-500 dark:text-gray-400
                   file:mr-4 file:py-2 file:px-4
-                  file:rounded file:border-0
+                  file:rounded-full file:border-0
                   file:text-sm file:font-semibold
                   file:bg-blue-50 file:text-blue-700
                   dark:file:bg-blue-900 dark:file:text-blue-200
@@ -214,7 +243,7 @@ export default function TextImportModal({ isOpen, onClose, onSubmit, loading }) 
               rows={6}
               value={textContent}
               onChange={(e) => setTextContent(e.target.value)}
-              className="w-full border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              className="w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
               required={!textContent}
             />
             
@@ -231,10 +260,10 @@ export default function TextImportModal({ isOpen, onClose, onSubmit, loading }) 
               }}
             />
             <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={onClose} className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
+              <button type="button" onClick={onClose} className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-full dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
                 Отмена
               </button>
-              <button type="submit" disabled={loading || isProcessing} className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50">
+              <button type="submit" disabled={loading || isProcessing} className="px-4 py-2 bg-blue-500 text-white rounded-full hover:bg-blue-600 disabled:opacity-50">
                 {loading ? 'Импорт...' : 'Импорт'}
               </button>
             </div>

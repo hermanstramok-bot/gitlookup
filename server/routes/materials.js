@@ -36,14 +36,16 @@ router.get('/material/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// PUT /api/materials/:id
+// PUT /api/materials/:id – обновление материала (включая author и status)
 router.put('/materials/:id', authenticateToken, async (req, res) => {
   const userId = req.user.id;
   const id = parseInt(req.params.id);
-  const { title, icon } = req.body;
+  const { title, icon, author, status } = req.body;
+
   if (!title || !icon) {
     return res.status(400).json({ error: 'Title and icon are required' });
   }
+
   try {
     const existing = await prisma.material.findFirst({
       where: { id, userId }
@@ -51,14 +53,21 @@ router.put('/materials/:id', authenticateToken, async (req, res) => {
     if (!existing) {
       return res.status(404).json({ error: 'Material not found or not yours' });
     }
+
+    const updateData = { title, icon };
+    if (author !== undefined) updateData.author = author;
+    if (status !== undefined) updateData.status = status;
+
     const updated = await prisma.material.update({
       where: { id },
-      data: { title, icon }
+      data: updateData
     });
+
     if (existing.type === 'text') {
       clearTextCache();
     }
-    res.json({ success: true });
+
+    res.json({ success: true, material: updated });
   } catch (err) {
     console.error('Error updating material:', err);
     res.status(500).json({ error: 'Failed to update material' });
@@ -88,7 +97,7 @@ router.delete('/materials/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// PUT /api/materials/:id/folder — перемещение материала в папку
+// PUT /api/materials/:id/folder – перемещение материала в папку
 router.put('/materials/:id/folder', authenticateToken, async (req, res) => {
   const userId = req.user.id;
   const id = parseInt(req.params.id);
@@ -102,7 +111,6 @@ router.put('/materials/:id/folder', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Material not found or not yours' });
     }
 
-    // Приводим folder_id к числу или null
     let finalFolderId = null;
     if (folder_id !== null && folder_id !== undefined) {
       const folderIdNum = parseInt(folder_id);

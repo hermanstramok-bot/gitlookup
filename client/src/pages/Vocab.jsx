@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { normalizeWord } from '../utils/normalizeWord';
 
 // ============================================================
-// Модальное окно подтверждения
+// Модальное окно подтверждения — с закруглениями
 // ============================================================
 function ConfirmModal({ isOpen, title = 'Подтверждение', message, confirmLabel = 'Удалить', onClose, onConfirm }) {
   return (
@@ -18,7 +18,7 @@ function ConfirmModal({ isOpen, title = 'Подтверждение', message, c
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.9 }}
             transition={{ duration: 0.2 }}
-            className="bg-white dark:bg-gray-800 rounded max-w-md w-full"
+            className="bg-white dark:bg-gray-800 rounded-2xl max-w-md w-full"
           >
             <div className="p-4 border-b dark:border-gray-700">
               <h2 className="text-xl font-bold dark:text-white">{title}</h2>
@@ -29,13 +29,13 @@ function ConfirmModal({ isOpen, title = 'Подтверждение', message, c
             <div className="border-t dark:border-gray-700 p-4 flex justify-end gap-2">
               <button
                 onClick={onClose}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-200"
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-full hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-200"
               >
                 Отмена
               </button>
               <button
                 onClick={onConfirm}
-                className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                className="px-4 py-2 bg-red-500 text-white rounded-full hover:bg-red-600"
               >
                 {confirmLabel}
               </button>
@@ -48,7 +48,7 @@ function ConfirmModal({ isOpen, title = 'Подтверждение', message, c
 }
 
 // ============================================================
-// Модальное окно сообщений (успех / ошибка)
+// Модальное окно сообщений (успех / ошибка) — с закруглениями
 // ============================================================
 function MessageModal({ isOpen, type, title, message, onClose }) {
   const bgColor = type === 'success' ? 'bg-green-50 dark:bg-green-900' : 'bg-red-50 dark:bg-red-900';
@@ -64,7 +64,7 @@ function MessageModal({ isOpen, type, title, message, onClose }) {
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.9 }}
             transition={{ duration: 0.2 }}
-            className={`bg-white dark:bg-gray-800 rounded max-w-md w-full border-l-4 ${borderColor}`}
+            className={`bg-white dark:bg-gray-800 rounded-2xl max-w-md w-full border-l-4 ${borderColor}`}
           >
             <div className="p-4 flex items-start gap-3">
               <div className="text-2xl">{icon}</div>
@@ -76,7 +76,7 @@ function MessageModal({ isOpen, type, title, message, onClose }) {
             <div className="border-t dark:border-gray-700 p-3 flex justify-end">
               <button
                 onClick={onClose}
-                className="px-4 py-1 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded hover:bg-gray-300 dark:hover:bg-gray-600"
+                className="px-4 py-1 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-full hover:bg-gray-300 dark:hover:bg-gray-600"
               >
                 Закрыть
               </button>
@@ -356,7 +356,6 @@ export default function Vocab() {
   if (sourceFilter !== 'all') {
     filtered = filtered.filter(w => w.source_title === sourceFilter);
   }
-  // Регистронезависимый поиск с нормализацией
   if (searchTerm) {
     const term = normalizeWord(searchTerm);
     filtered = filtered.filter(w =>
@@ -400,9 +399,7 @@ export default function Vocab() {
   if (loading) return <div className="p-8 dark:text-gray-100">Загрузка...</div>;
 
   return (
-    // ВНЕШНИЙ КОНТЕЙНЕР – фон на всю страницу
     <div className="min-h-screen dark:bg-gray-900">
-      {/* ВНУТРЕННИЙ КОНТЕЙНЕР – центрирование содержимого */}
       <div className="p-8 max-w-6xl mx-auto">
         <div className="flex justify-between items-center mb-4">
           <Link to="/" className="text-blue-600 dark:text-blue-400 hover:underline">
@@ -423,13 +420,13 @@ export default function Vocab() {
 
         <button
           onClick={() => setShowAddForm(!showAddForm)}
-          className="mb-6 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+          className="mb-6 bg-green-600 text-white px-4 py-2 rounded-full hover:bg-green-700"
         >
           + Добавить слово / фразу
         </button>
 
         {showAddForm && (
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg mb-8 border border-gray-200 dark:border-gray-600">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl mb-8 border border-gray-200 dark:border-gray-600">
             <h3 className="text-xl font-semibold mb-4 dark:text-white">Добавить новое слово</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <input
@@ -437,19 +434,19 @@ export default function Vocab() {
                 placeholder="Слово / Фраза"
                 value={newWord}
                 onChange={(e) => setNewWord(e.target.value)}
-                className="p-2 border rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                className="p-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
               />
               <input
                 type="text"
                 placeholder="Перевод"
                 value={newTranslation}
                 onChange={(e) => setNewTranslation(e.target.value)}
-                className="p-2 border rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                className="p-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
               />
               <select
                 value={newStatus}
                 onChange={(e) => setNewStatus(e.target.value)}
-                className="p-2 border rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                className="p-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
               >
                 <option value="new">Новое</option>
                 <option value="learning">Изучается</option>
@@ -471,7 +468,7 @@ export default function Vocab() {
                   <select
                     value={selectedSourceId}
                     onChange={(e) => setSelectedSourceId(e.target.value)}
-                    className="w-full p-2 border rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    className="w-full p-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                   >
                     <option value="">-- Выберите материал --</option>
                     {materials.map(mat => (
@@ -485,7 +482,7 @@ export default function Vocab() {
                     placeholder="Например: Мои заметки, Фильм и т.д."
                     value={customSource}
                     onChange={(e) => setCustomSource(e.target.value)}
-                    className="w-full p-2 border rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    className="w-full p-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                   />
                 )}
               </div>
@@ -494,13 +491,13 @@ export default function Vocab() {
               <button
                 onClick={handleAddWord}
                 disabled={adding}
-                className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
+                className="bg-blue-600 text-white px-4 py-2 rounded-full hover:bg-blue-700 disabled:opacity-50"
               >
                 {adding ? 'Сохранение...' : 'Сохранить'}
               </button>
               <button
                 onClick={() => setShowAddForm(false)}
-                className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
+                className="bg-gray-500 text-white px-4 py-2 rounded-full hover:bg-gray-600"
               >
                 Отмена
               </button>
@@ -509,7 +506,7 @@ export default function Vocab() {
         )}
 
         {/* Фильтры и поиск */}
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg mb-8 border border-gray-200 dark:border-gray-600">
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl mb-8 border border-gray-200 dark:border-gray-600">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-semibold dark:text-gray-200 mb-2">Поиск:</label>
@@ -518,12 +515,12 @@ export default function Vocab() {
                 placeholder="Слово или перевод"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full p-2 border rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                className="w-full p-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
               />
             </div>
             <div>
               <label className="block text-sm font-semibold dark:text-gray-200 mb-2">Статус:</label>
-              <select value={filter} onChange={(e) => setFilter(e.target.value)} className="w-full p-2 border rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
+              <select value={filter} onChange={(e) => setFilter(e.target.value)} className="w-full p-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
                 <option value="all">Все ({vocab.length})</option>
                 <option value="new">Новые ({vocab.filter(w => w.status === 'new').length})</option>
                 <option value="learning">Изучаются ({vocab.filter(w => w.status === 'learning').length})</option>
@@ -532,7 +529,7 @@ export default function Vocab() {
             </div>
             <div>
               <label className="block text-sm font-semibold dark:text-gray-200 mb-2">Источник:</label>
-              <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} className="w-full p-2 border rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
+              <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} className="w-full p-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
                 <option value="all">Все</option>
                 {sources.map(src => (
                   <option key={src} value={src}>{src}</option>
@@ -544,7 +541,7 @@ export default function Vocab() {
               <div className="flex gap-2">
                 <button
                   onClick={sortAlphabet}
-                  className={`px-3 py-1 rounded text-sm ${
+                  className={`px-3 py-1 rounded-full text-sm ${
                     sortField === 'word' && sortDir === 'asc'
                       ? 'bg-blue-600 text-white'
                       : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
@@ -554,7 +551,7 @@ export default function Vocab() {
                 </button>
                 <button
                   onClick={sortRecent}
-                  className={`px-3 py-1 rounded text-sm ${
+                  className={`px-3 py-1 rounded-full text-sm ${
                     sortField === 'id' && sortDir === 'desc'
                       ? 'bg-blue-600 text-white'
                       : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
@@ -573,13 +570,13 @@ export default function Vocab() {
             <span className="text-sm dark:text-gray-200">Выбрано: {selectedIds.length}</span>
             <button
               onClick={exportSelected}
-              className="bg-green-600 text-white px-4 py-1.5 rounded text-sm hover:bg-green-700"
+              className="bg-green-600 text-white px-4 py-1.5 rounded-full text-sm hover:bg-green-700"
             >
               📥 Экспорт выбранных
             </button>
             <button
               onClick={deleteSelected}
-              className="bg-red-600 text-white px-4 py-1.5 rounded text-sm hover:bg-red-700"
+              className="bg-red-600 text-white px-4 py-1.5 rounded-full text-sm hover:bg-red-700"
             >
               🗑 Удалить выбранные
             </button>
@@ -632,7 +629,7 @@ export default function Vocab() {
                           type="text"
                           value={editWord}
                           onChange={(e) => setEditWord(e.target.value)}
-                          className="w-full p-1 border rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                          className="w-full p-1 border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                           autoFocus
                         />
                       ) : word.word}
@@ -643,7 +640,7 @@ export default function Vocab() {
                           type="text"
                           value={editTranslation}
                           onChange={(e) => setEditTranslation(e.target.value)}
-                          className="w-full p-1 border rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                          className="w-full p-1 border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                         />
                       ) : word.translation}
                     </td>
@@ -659,13 +656,13 @@ export default function Vocab() {
                           <>
                             <button
                               onClick={() => saveEdit(word.id)}
-                              className="px-3 py-1.5 bg-green-500 text-white rounded text-sm hover:bg-green-600"
+                              className="px-3 py-1.5 bg-green-500 text-white rounded-full text-sm hover:bg-green-600"
                             >
                               Сохранить
                             </button>
                             <button
                               onClick={cancelEdit}
-                              className="px-3 py-1.5 bg-gray-500 text-white rounded text-sm hover:bg-gray-600"
+                              className="px-3 py-1.5 bg-gray-500 text-white rounded-full text-sm hover:bg-gray-600"
                             >
                               Отмена
                             </button>
@@ -674,14 +671,14 @@ export default function Vocab() {
                           <>
                             <button
                               onClick={() => startEdit(word)}
-                              className="px-3 py-1.5 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
+                              className="px-3 py-1.5 bg-blue-500 text-white rounded-full text-sm hover:bg-blue-600"
                             >
                               Изменить
                             </button>
                             <select
                               value={word.status}
                               onChange={(e) => handleStatusChange(word.id, e.target.value)}
-                              className="px-2 py-1.5 border rounded text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                              className="px-2 py-1.5 border rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                             >
                               <option value="new">Новое</option>
                               <option value="learning">Изучается</option>
@@ -689,7 +686,7 @@ export default function Vocab() {
                             </select>
                             <button
                               onClick={() => handleDelete(word.id)}
-                              className="px-3 py-1.5 bg-red-500 text-white rounded text-sm hover:bg-red-600"
+                              className="px-3 py-1.5 bg-red-500 text-white rounded-full text-sm hover:bg-red-600"
                             >
                               Удалить
                             </button>
@@ -705,8 +702,11 @@ export default function Vocab() {
         )}
 
         <div className="mt-8 pt-8 border-t-2 dark:border-gray-600 flex gap-4">
-          <button onClick={() => exportCSV(vocab)} className="bg-green-600 text-white px-6 py-3 rounded font-semibold hover:bg-green-700">
-            📥 Экспорт всего
+          <button 
+            onClick={() => exportCSV(filtered)} 
+            className="bg-green-600 text-white px-6 py-3 rounded-full font-semibold hover:bg-green-700"
+          >
+            📥 Экспорт списка ({filtered.length})
           </button>
         </div>
 

@@ -1,5 +1,5 @@
 const path = require('path');
-const { exec } = require('child_process');
+const { exec, execSync } = require('child_process');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const prisma = require('../prismaClient');
@@ -13,7 +13,7 @@ const { clearTextCache } = require('./texts');
 router.post('/import/text', authenticateToken, async (req, res) => {
   const startTime = Date.now();
   console.log('=== IMPORT TEXT START ===');
-  const { title, content, icon } = req.body;
+  const { title, content, icon, author, status } = req.body;
   const userId = req.user.id;
 
   if (!title || !content) {
@@ -27,7 +27,9 @@ router.post('/import/text', authenticateToken, async (req, res) => {
         type: 'text',
         rawContent: content,
         icon: icon || '/icons/default.png',
-        userId
+        userId,
+        author: author || null,
+        status: status || 'new'
       }
     });
     console.log(`✓ Text imported in ${Date.now() - startTime} ms`);
@@ -36,7 +38,9 @@ router.post('/import/text', authenticateToken, async (req, res) => {
       id: material.id,
       title: material.title,
       type: material.type,
-      imported_at: material.importedAt
+      imported_at: material.importedAt,
+      author: material.author,
+      status: material.status
     });
   } catch (err) {
     console.error('Text import error:', err);
@@ -52,12 +56,28 @@ router.post('/import/youtube', authenticateToken, async (req, res) => {
   console.log('\n=== IMPORT YOUTUBE START ===');
   console.log('URL received:', req.body.youtube_url);
 
-  const { youtube_url, title: customTitle, icon } = req.body;
+  const { youtube_url, title: customTitle, icon, author: customAuthor, status } = req.body;
   const userId = req.user.id;
 
   if (!youtube_url) {
     return res.status(400).json({ error: 'YouTube URL required' });
   }
+
+  // Получаем информацию о видео (автор, название и т.д.)
+  let videoInfo = null;
+  let author = null;
+  try {
+    const infoJson = execSync(`yt-dlp --dump-json "${youtube_url}"`, { encoding: 'utf-8' });
+    videoInfo = JSON.parse(infoJson);
+    author = videoInfo.uploader || videoInfo.channel || null;
+    console.log(`📺 Video info: title="${videoInfo.title}", author="${author}"`);
+  } catch (err) {
+    console.warn('⚠️ Could not fetch video metadata:', err.message);
+    // Продолжаем без автора
+  }
+
+  // Приоритет: переданный вручную author > автоматический
+  const finalAuthor = customAuthor || author || null;
 
   const downloadDir = path.join(__dirname, '..', 'downloads', uuidv4());
   console.log('Temporary download directory:', downloadDir);
@@ -204,6 +224,8 @@ router.post('/import/youtube', authenticateToken, async (req, res) => {
           youtubeUrl: youtube_url,
           icon: icon || '/icons/default.png',
           userId,
+          author: finalAuthor,
+          status: status || 'new',
           subtitles: {
             create: subtitles.map((sub, i) => ({
               startMs: sub.start_ms,
@@ -225,6 +247,8 @@ router.post('/import/youtube', authenticateToken, async (req, res) => {
           type: 'video',
           youtube_url,
           subtitle_count: subtitles.length,
+          author: material.author,
+          status: material.status,
           subtitles: subtitles.map(s => ({
             start: s.start_ms,
             end: s.end_ms,
