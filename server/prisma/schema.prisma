@@ -10,11 +10,15 @@ datasource db {
 // ПОЛЬЗОВАТЕЛИ
 // ============================================================
 model User {
-  id         Int       @id @default(autoincrement())
-  username   String    @unique @db.VarChar(50)
-  password   String    @map("password_hash") @db.Text
-  createdAt  DateTime  @default(now()) @map("created_at")
-  
+  id            Int       @id @default(autoincrement())
+  username      String    @unique @db.VarChar(50)
+  password      String    @map("password_hash") @db.Text
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  // НОВЫЕ ПОЛЯ (добавлены) — настройки изучаемого языка и субтитров
+  targetLang    String    @default("de") @map("target_lang") @db.VarChar(5)
+  subtitleLines Int       @default(1) @map("subtitle_lines")
+
   materials  Material[]
   folders    Folder[]
   vocab      Vocab[]

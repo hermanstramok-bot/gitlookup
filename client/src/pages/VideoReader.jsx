@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import YouTube from 'react-youtube';
+import { motion, AnimatePresence } from 'framer-motion';
 import WordPanel from '../components/WordPanel';
 import { apiFetch } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
@@ -8,6 +9,16 @@ import { useTranslations } from '../hooks/useTranslations';
 import { useWordPanel } from '../hooks/useWordPanel';
 import { usePagination } from '../hooks/usePagination';
 import { normalizeWord } from '../utils/normalizeWord';
+
+// Язык, выбранный пользователем как изучаемый (Settings.jsx). Используется
+// для запроса субтитров на нужном языке и для перевода в WordPanel/Google Translate.
+const getTargetLang = () => localStorage.getItem('targetLang') || 'de';
+
+// Количество строк субтитров (1 или 2), выбранное в Settings.jsx.
+const getSubtitleLines = () => {
+  const saved = Number(localStorage.getItem('subtitleLines'));
+  return saved === 2 ? 2 : 1;
+};
 
 // --- Ключи localStorage для персистентности режима/времени на видео ---
 const viewModeKey = (id) => `videoreader_last_mode_${id}`;
@@ -53,19 +64,99 @@ export default function VideoReader() {
 
   const [activeSubId, setActiveSubId] = useState(null);
 
+  // Изучаемый язык и количество строк субтитров — настраиваются в Settings.jsx
+  // и хранятся в localStorage. Слушаем изменения, чтобы подхватить их без
+  // перезагрузки страницы, если пользователь поменял настройки в другой вкладке.
+  const [targetLang, setTargetLang] = useState(getTargetLang);
+  const [subtitleLines, setSubtitleLines] = useState(getSubtitleLines);
+
+  useEffect(() => {
+    const syncSettings = () => {
+      setTargetLang(getTargetLang());
+      setSubtitleLines(getSubtitleLines());
+    };
+    window.addEventListener('storage', syncSettings);
+    window.addEventListener('targetLangChange', syncSettings);
+    return () => {
+      window.removeEventListener('storage', syncSettings);
+      window.removeEventListener('targetLangChange', syncSettings);
+    };
+  }, []);
+
   const [savedWords, setSavedWords] = useState([]);
-  const wordPanel = useWordPanel(id, savedWords, setSavedWords);
+  const wordPanel = useWordPanel(id, savedWords, setSavedWords, targetLang);
+
+  // --- Блоки субтитров ---
+  // При subtitleLines === 1 блок = один субтитр (как раньше).
+  // При subtitleLines === 2 блок = скользящая пара [текущий, следующий]:
+  // block[0] = subtitles[0..1], block[1] = subtitles[1..2], block[2] = subtitles[2..3]...
+  // Это позволяет кликать по словам сразу в обеих строках как по единому
+  // смысловому блоку (subtitles часто режут одно предложение на части).
+  // Каждое слово блока получает сквозной локальный индекс (across обе строки),
+  // а также помнит, какому реальному sub.id и его собственному локальному
+  // индексу внутри этого sub оно принадлежит — это нужно для подсветки
+  // сохранённых слов (word_indices считаются относительно оригинального sub).
+  const subtitleBlocks = useMemo(() => {
+    if (!subtitles.length) return [];
+
+    if (subtitleLines !== 2) {
+      return subtitles.map((sub, subIdx) => {
+        const words = sub.line_text.split(/\s+/).filter(Boolean);
+        return {
+          id: `blk-${sub.id}`,
+          subIndices: [subIdx],
+          subs: [sub],
+          words: words.map((w, wIdx) => ({ text: w, subId: sub.id, subLocalIndex: wIdx })),
+        };
+      });
+    }
+
+    // Непересекающиеся пары: (0,1), (2,3), (4,5)... Каждый субтитр входит
+    // ровно в один блок — это убирает дублирование строк в списке (в
+    // отличие от скользящих блоков, где строка N была бы видна дважды:
+    // как вторая часть блока N-1 и как первая часть блока N).
+    const blocks = [];
+    for (let subIdx = 0; subIdx < subtitles.length; subIdx += 2) {
+      const sub = subtitles[subIdx];
+      const nextSub = subtitles[subIdx + 1];
+      const subs = nextSub ? [sub, nextSub] : [sub];
+      const words = [];
+      subs.forEach((s) => {
+        const subWords = s.line_text.split(/\s+/).filter(Boolean);
+        subWords.forEach((w, wIdx) => {
+          words.push({ text: w, subId: s.id, subLocalIndex: wIdx });
+        });
+      });
+      blocks.push({
+        id: `blk-${sub.id}`,
+        subIndices: nextSub ? [subIdx, subIdx + 1] : [subIdx],
+        subs,
+        words,
+      });
+    }
+    return blocks;
+  }, [subtitles, subtitleLines]);
+
+  // Быстрый доступ: индекс субтитра -> индекс блока, в который ВХОДИТ этот
+  // субтитр (не обязательно начинает его — субтитр с нечётным индексом
+  // входит в блок как вторая строка при subtitleLines===2).
+  const blockContaining = useCallback((subIndex) => {
+    if (subIndex < 0) return -1;
+    if (subtitleLines !== 2) return subIndex < subtitleBlocks.length ? subIndex : -1;
+    const blockIdx = Math.floor(subIndex / 2);
+    return blockIdx < subtitleBlocks.length ? blockIdx : -1;
+  }, [subtitleBlocks, subtitleLines]);
+
+
 
   const textForPagination = useMemo(() => {
     return {
-      sentences: subtitles.map((sub) => ({
-        id: sub.id,
-        text: sub.line_text,
-        original: sub.line_text,
-        words: sub.line_text.split(/\s+/).filter(Boolean),
-      })),
+      sentences: subtitleBlocks.map((block) => {
+        const text = block.words.map(w => w.text).join(' ');
+        return { id: block.id, text, original: text, words: block.words.map(w => w.text) };
+      }),
     };
-  }, [subtitles]);
+  }, [subtitleBlocks]);
 
   const containerRef = useRef(null);
   const shadowRef = useRef(null);
@@ -89,13 +180,16 @@ export default function VideoReader() {
   });
 
   const translationSentences = useMemo(() => {
-    return subtitles.map(sub => ({
-      id: sub.id,
-      original: sub.line_text,
+    return subtitleBlocks.map(block => ({
+      id: block.id,
+      original: block.words.map(w => w.text).join(' '),
     }));
-  }, [subtitles]);
+  }, [subtitleBlocks]);
 
-  const { translations } = useTranslations(translationSentences, id);
+  // TODO: сверить с реальной сигнатурой useTranslations.js — предполагается,
+  // что хук умеет принимать целевой язык перевода третьим аргументом
+  // (или через объект опций). Если сигнатура другая, поправить здесь.
+  const { translations } = useTranslations(translationSentences, id, targetLang);
 
   const wordStatusMap = useMemo(() => {
     const map = new Map();
@@ -256,16 +350,22 @@ export default function VideoReader() {
       const activeSub = subtitles[activeIdx];
       setActiveSubId(activeSub.id);
       if (viewMode === 'subtitles' && pages.length > 0) {
+        const activeBlockIdx = blockContaining(activeIdx);
         let page = 0;
         for (let p = pages.length - 1; p >= 0; p--) {
-          if (pages[p] <= activeIdx) { page = p; break; }
+          if (pages[p] <= activeBlockIdx) { page = p; break; }
         }
         if (page !== curPage) setCurPage(page);
       }
-    } else {
+    }
+    // Если activeIdx === -1, это либо пауза МЕЖДУ репликами (тогда сохраняем
+    // последний показанный субтитр/блок на экране — не даём надписи "субтитры
+    // появятся при воспроизведении"), либо перемотка НАЗАД до первой реплики
+    // (тогда сбрасываем, т.к. "последний субтитр" был бы из будущего).
+    else if (subtitles.length > 0 && timeMs < subtitles[0].start_ms) {
       setActiveSubId(null);
     }
-  }, [findActiveSubtitle, subtitles, viewMode, pages, curPage, setCurPage]);
+  }, [findActiveSubtitle, subtitles, viewMode, pages, curPage, setCurPage, blockContaining]);
 
   const onPlayerReady = (event) => {
     playerRef.current = event.target;
@@ -308,6 +408,10 @@ export default function VideoReader() {
     apiFetch(`/api/material/${id}`, { signal: ac.signal })
       .then(d => { if (isMounted.current) setMaterial(d); })
       .catch(e => { if (e.name !== 'AbortError' && isMounted.current) setError(String(e)); });
+    // Субтитры привязаны к материалу без указания языка — на бэкенде всегда
+    // один набор субтитров на одно видео (в языке, на котором его
+    // импортировали). Чтобы получить субтитры на другом языке, видео нужно
+    // импортировать заново — параметр ?lang= здесь не поддерживается бэкендом.
     apiFetch(`/api/subtitles/${id}`, { signal: ac.signal })
       .then(d => { if (isMounted.current) setSubtitles(d); })
       .catch(e => { if (e.name !== 'AbortError' && isMounted.current) setError(String(e)); });
@@ -346,19 +450,21 @@ export default function VideoReader() {
     };
   }, [saveCurrentTime]);
 
-  const handleWordClick = useCallback(async (word, wordIndex, subId) => {
-    const subIndex = subtitles.findIndex(s => s.id === subId);
-    if (subIndex === -1) return;
-    const sub = subtitles[subIndex];
-    const lineText = sub.line_text;
-    const words = lineText.split(/\s+/).filter(Boolean);
+  // wordKey однозначно определяет слово внутри блока: и субтитр, к которому
+  // оно относится (для сохранения word_indices в исходной, "субтитровой"
+  // системе координат), и позицию внутри объединённого массива слов блока
+  // (для визуального выделения диапазона по клику).
+  const handleWordClick = useCallback(async (word, blockWordIndex, blockIndex) => {
+    const block = subtitleBlocks[blockIndex];
+    if (!block) return;
+    const words = block.words;
 
-    if (wordPanel.selectedSentenceIndex === subIndex && wordPanel.selectedWord !== null && !wordPanel.isManualEdit) {
+    if (wordPanel.selectedSentenceIndex === blockIndex && wordPanel.selectedWord !== null && !wordPanel.isManualEdit) {
       const newSelected = new Set(wordPanel.selectedIndices);
-      newSelected.has(wordIndex) ? newSelected.delete(wordIndex) : newSelected.add(wordIndex);
+      newSelected.has(blockWordIndex) ? newSelected.delete(blockWordIndex) : newSelected.add(blockWordIndex);
       if (newSelected.size === 0) { wordPanel.closePanel(); return; }
       const sorted = Array.from(newSelected).sort((a, b) => a - b);
-      const phrase = sorted.map(i => words[i]).join(' ').trim();
+      const phrase = sorted.map(i => words[i]?.text).filter(Boolean).join(' ').trim();
       wordPanel.setSelectedIndices(newSelected);
       wordPanel.setHighlightedIndices(newSelected);
       wordPanel.setCanonicalWord(phrase);
@@ -370,22 +476,24 @@ export default function VideoReader() {
       return;
     }
 
-    const initialSet = new Set([wordIndex]);
+    const initialSet = new Set([blockWordIndex]);
     const computedPhrase = word;
 
     if (playerRef.current?.pauseVideo) playerRef.current.pauseVideo();
 
+    const blockText = words.map(w => w.text).join(' ');
+
     wordPanel.openPanel({
       word,
-      sentenceIndex: subIndex,
-      sentence: sub.line_text,
-      translation: translations[String(subId)] || '',
+      sentenceIndex: blockIndex,
+      sentence: blockText,
+      translation: translations[String(block.id)] || '',
       token: null,
       reflexive: false,
       indices: initialSet,
       phrase: computedPhrase,
     });
-  }, [subtitles, wordPanel, translations]);
+  }, [subtitleBlocks, wordPanel, translations]);
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -396,59 +504,81 @@ export default function VideoReader() {
     }
   };
 
-  const renderSubtitleText = useCallback((sub, index, isFullMode = false) => {
-    const words = sub.line_text.split(/\s+/).filter(Boolean);
-    const isActive = activeSubId === sub.id;
-
-    const highlightMap = new Map();
+  // Рендерит блок субтитров целиком. При subtitleLines === 2 в блоке две
+  // строки — обе рендерятся как обычный (не shadow, кликабельный) текст,
+  // визуально разделённые переносом строки, но кликабельные "насквозь":
+  // клик по слову во второй строке продолжает/расширяет выделение из первой.
+  const renderBlockText = useCallback((block, blockIndex, isFullMode = false) => {
+    const highlightMap = new Map(); // ключ: `${subId}:${subLocalIndex}` -> status
     savedWords.forEach(sw => {
-      if (sw.sentence_index === index && sw.word_indices) {
-        sw.word_indices.forEach(idx => highlightMap.set(idx, sw.status));
-      }
+      if (sw.word_indices == null) return;
+      // sentence_index у сохранённых слов исторически указывал на индекс
+      // субтитра (до введения блоков). Сохранённые записи сопоставляем по
+      // subId субтитра, входящего в этот блок.
+      block.subs.forEach((s, localSubPos) => {
+        const subIndex = subtitles.findIndex(x => x.id === s.id);
+        if (sw.sentence_index === subIndex) {
+          sw.word_indices.forEach(idx => highlightMap.set(`${s.id}:${idx}`, sw.status));
+        }
+      });
     });
 
-    return words.map((word, idx) => {
-      const normalizedWord = normalizeWord(word);
-      const statusFromMap = wordStatusMap.get(normalizedWord);
-      const isSavedByWord = !!statusFromMap;
-      const isSavedByIndex = highlightMap.has(idx);
-      const isSaved = isSavedByIndex || isSavedByWord;
-      const status = highlightMap.get(idx) || statusFromMap;
-
-      const isHighlighted = wordPanel.selectedSentenceIndex === index && wordPanel.highlightedIndices.has(idx);
-
-      return (
-        <span
-          key={`w-${sub.id}-${idx}`}
-          onClick={() => handleWordClick(word, idx, sub.id)}
-          className={`inline-block px-0.5 cursor-pointer transition-colors ${
-            isHighlighted
-              ? 'bg-blue-300 dark:bg-blue-700 font-semibold rounded-md'
-              : isSaved
-              ? `${getStatusColor(status)} font-bold rounded-md`
-              : isActive && !isFullMode
-              ? 'font-bold hover:bg-yellow-200 dark:hover:bg-yellow-900 hover:rounded-md'
-              : 'hover:bg-yellow-200 dark:hover:bg-yellow-900 hover:rounded-md'
-          }`}
-        >
-          {word}
-        </span>
-      );
+    // Группируем слова блока по исходному sub.id, чтобы вставить перенос строки
+    // между строками субтитров (визуально — это "две строки", а не одна длинная).
+    const lines = [];
+    block.subs.forEach((s) => {
+      lines.push({ subId: s.id, words: block.words.filter(w => w.subId === s.id) });
     });
-  }, [activeSubId, savedWords, handleWordClick, wordPanel.selectedSentenceIndex, wordPanel.highlightedIndices, wordStatusMap]);
+
+    let runningIndex = 0;
+    return lines.map((line, lineIdx) => (
+      <div key={`line-${block.id}-${line.subId}`} className={lineIdx > 0 ? 'mt-1' : undefined}>
+        {line.words.map((w) => {
+          const blockWordIndex = runningIndex++;
+          const normalizedWord = normalizeWord(w.text);
+          const statusFromMap = wordStatusMap.get(normalizedWord);
+          const isSavedByWord = !!statusFromMap;
+          const isSavedByIndex = highlightMap.has(`${w.subId}:${w.subLocalIndex}`);
+          const isSaved = isSavedByIndex || isSavedByWord;
+          const status = highlightMap.get(`${w.subId}:${w.subLocalIndex}`) || statusFromMap;
+
+          const isActive = activeSubId === w.subId;
+          const isHighlighted = wordPanel.selectedSentenceIndex === blockIndex && wordPanel.highlightedIndices.has(blockWordIndex);
+
+          return (
+            <span
+              key={`w-${block.id}-${w.subId}-${w.subLocalIndex}`}
+              onClick={() => handleWordClick(w.text, blockWordIndex, blockIndex)}
+              className={`inline-block px-0.5 cursor-pointer transition-colors ${
+                isHighlighted
+                  ? 'bg-blue-300 dark:bg-blue-700 font-semibold rounded-md'
+                  : isSaved
+                  ? `${getStatusColor(status)} font-bold rounded-md`
+                  : isActive && !isFullMode
+                  ? 'font-bold hover:bg-yellow-200 dark:hover:bg-yellow-900 hover:rounded-md'
+                  : 'hover:bg-yellow-200 dark:hover:bg-yellow-900 hover:rounded-md'
+              }`}
+            >
+              {w.text}
+            </span>
+          );
+        })}
+      </div>
+    ));
+  }, [activeSubId, savedWords, subtitles, handleWordClick, wordPanel.selectedSentenceIndex, wordPanel.highlightedIndices, wordStatusMap]);
 
   const renderShadowContent = useCallback(() => {
-    if (!subtitles.length) return null;
+    if (!subtitleBlocks.length) return null;
     return (
       <div>
-        {subtitles.map((sub) => (
-          <div key={sub.id} data-page-item className="mb-4">
-            <div className="text-[20px] leading-relaxed">{sub.line_text}</div>
+        {subtitleBlocks.map((block) => (
+          <div key={block.id} data-page-item className="mb-4">
+            <div className="text-[20px] leading-relaxed">{block.words.map(w => w.text).join(' ')}</div>
           </div>
         ))}
       </div>
     );
-  }, [subtitles]);
+  }, [subtitleBlocks]);
 
   const videoId = material?.youtubeUrl
     ? material.youtubeUrl.match(/(?:v=|\/)([0-9A-Za-z_-]{11})/)?.[1]
@@ -457,8 +587,13 @@ export default function VideoReader() {
   if (error)    return <div className="p-8 text-red-600 dark:text-red-400">Ошибка: {error}</div>;
   if (!material) return <div className="p-8 dark:text-gray-100">Загрузка материала...</div>;
 
-  const activeSubtitle = subtitles.find(s => s.id === activeSubId);
-  const currentSubtitles = viewMode === 'subtitles' ? subtitles.slice(startIdx, endIdx) : [];
+  const activeSubtitleIdx = subtitles.findIndex(s => s.id === activeSubId);
+  // Активный блок для full-режима — блок, начинающийся с активного субтитра.
+  // При subtitleLines===2 он уже содержит [активный, следующий] — второй
+  // рендерится внутри renderBlockText как вторая строка того же блока.
+  const activeBlockIdx = blockContaining(activeSubtitleIdx);
+  const activeBlock = activeBlockIdx >= 0 ? subtitleBlocks[activeBlockIdx] : undefined;
+  const currentBlocks = viewMode === 'subtitles' ? subtitleBlocks.slice(startIdx, endIdx) : [];
 
   return (
     <div className="h-screen w-full bg-gray-50 dark:bg-gray-900 flex flex-col overflow-hidden">
@@ -499,14 +634,23 @@ export default function VideoReader() {
                 onStateChange={onPlayerStateChange}
               />
             </div>
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 select-none">
-              <div className="text-[20px] leading-relaxed text-center dark:text-gray-100">
-                {activeSubtitle ? (
-                  renderSubtitleText(activeSubtitle, subtitles.indexOf(activeSubtitle), true)
-                ) : (
-                  <span className="text-gray-400">🎬 Субтитры появятся при воспроизведении</span>
-                )}
-              </div>
+            <div className="relative bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 select-none min-h-[6rem] flex items-center justify-center overflow-hidden">
+              {activeBlock ? (
+                <AnimatePresence initial={false}>
+                  <motion.div
+                    key={activeBlock.id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.35, ease: 'easeInOut' }}
+                    className="absolute inset-0 flex flex-col items-center justify-center text-[20px] leading-relaxed text-center dark:text-gray-100 px-6"
+                  >
+                    {renderBlockText(activeBlock, activeBlockIdx, true)}
+                  </motion.div>
+                </AnimatePresence>
+              ) : (
+                <span className="text-gray-400">🎬 Субтитры появятся при воспроизведении</span>
+              )}
             </div>
           </div>
         </div>
@@ -532,13 +676,13 @@ export default function VideoReader() {
                   ) : (
                     <div className="flex-1 flex flex-col justify-center">
                       <div className="space-y-4">
-                        {currentSubtitles.map((sub, idx) => (
-                          <div key={sub.id} className="text-[20px] leading-relaxed dark:text-gray-100">
-                            {renderSubtitleText(sub, startIdx + idx, false)}
+                        {currentBlocks.map((block, idx) => (
+                          <div key={block.id} className="text-[20px] leading-relaxed dark:text-gray-100">
+                            {renderBlockText(block, startIdx + idx, false)}
                           </div>
                         ))}
                       </div>
-                      {currentSubtitles.length === 0 && (
+                      {currentBlocks.length === 0 && (
                         <p className="text-gray-400 text-center">Нет субтитров на этой странице</p>
                       )}
                     </div>
@@ -669,6 +813,7 @@ export default function VideoReader() {
             onSave={wordPanel.handleSaveWord}
             onClose={wordPanel.closePanel}
             onToggleContext={() => wordPanel.setShowContext(!wordPanel.showContext)}
+            targetLang={targetLang}
           />
         </div>
       )}

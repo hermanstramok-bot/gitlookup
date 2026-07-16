@@ -1,5 +1,9 @@
 import { useSpeech } from '../hooks/useSpeech';
 
+// targetLang — код изучаемого языка ('de' | 'en' | 'es' | 'fr' | 'pt'),
+// передаётся из Reader.jsx / VideoReader.jsx. Определяет, на каком языке
+// озвучивается слово (иначе всегда звучало по-немецки, независимо от
+// выбранного в Settings языка).
 export default function WordPanel({
   canonicalWord,
   wordTranslation,
@@ -12,6 +16,7 @@ export default function WordPanel({
   showContext,
   selectedToken,
   hasReflexive,
+  targetLang = 'de',
 
   onCanonicalChange,
   onVariantSelect,
@@ -25,7 +30,7 @@ export default function WordPanel({
   const handleSpeak = () => {
     const word = (canonicalWord || '').trim();
     if (!word || !speechSupported) return;
-    speak({ original: word }, 'wordpanel');
+    speak({ original: word }, 'wordpanel', targetLang);
   };
 
   return (

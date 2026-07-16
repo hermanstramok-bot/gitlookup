@@ -13,7 +13,11 @@ const JUNK = new Set(['—', '–', '-', '']);
 
 const isValidTranslation = (t) => t && !JUNK.has(t.trim());
 
-export function useWordPanel(materialId, savedWords, setSavedWords) {
+// targetLang — код изучаемого языка ('de' | 'en' | 'es' | 'fr' | 'pt'),
+// используется для перевода (переводим ИЗ этого языка через Google Translate
+// или локальный словарь). Озвучка слова в этом хуке больше не нужна — она
+// реализована прямо в WordPanel.jsx через собственный useSpeech(targetLang).
+export function useWordPanel(materialId, savedWords, setSavedWords, targetLang = 'de') {
   const [selectedWord, setSelectedWord] = useState(null);
   const [selectedSentenceIndex, setSelectedSentenceIndex] = useState(null);
   const [originalSentence, setOriginalSentence] = useState('');
@@ -51,7 +55,7 @@ export function useWordPanel(materialId, savedWords, setSavedWords) {
       const res = await fetch('/api/translate-sentence', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sentence: phrase })
+        body: JSON.stringify({ sentence: phrase, targetLang })
       });
       console.log('📡 Response status:', res.status);
       const data = await res.json();
@@ -63,7 +67,7 @@ export function useWordPanel(materialId, savedWords, setSavedWords) {
     } catch (err) {
       console.error('❌ translateViaGoogle error:', err);
     }
-  }, []);
+  }, [targetLang]);
 
   const translatePhrase = useCallback(async (phrase) => {
     console.log('🔄 translatePhrase called with phrase:', phrase);
@@ -73,15 +77,17 @@ export function useWordPanel(materialId, savedWords, setSavedWords) {
     }
     setTranslatingWord(true);
     try {
-      if (phrase.includes(' ')) {
-        console.log('🔍 Phrase detected, using Google Translate');
+      // Локальный словарь (server/data/de_rus_dict.json) есть только для
+      // немецкого. Для остальных языков сразу используем Google Translate.
+      if (phrase.includes(' ') || targetLang !== 'de') {
+        console.log('🔍 Phrase or non-German target, using Google Translate');
         await translateViaGoogle(phrase);
       } else {
-        console.log('🔍 Single word, trying dictionary first');
+        console.log('🔍 Single German word, trying dictionary first');
         const res = await fetch('/api/dictionary-lookup', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ word: phrase })
+          body: JSON.stringify({ word: phrase, targetLang })
         });
         const data = await res.json();
         const validTranslations = (data.translations || []).filter(isValidTranslation);
@@ -100,7 +106,7 @@ export function useWordPanel(materialId, savedWords, setSavedWords) {
     } finally {
       setTranslatingWord(false);
     }
-  }, [translateViaGoogle]);
+  }, [translateViaGoogle, targetLang]);
 
   const handleSaveWord = useCallback(async (status) => {
     if (!selectedWord) return;

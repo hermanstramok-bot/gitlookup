@@ -1,5 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
 
+// Соответствие кодов изучаемого языка (Settings.jsx: 'de', 'en', ...) и
+// BCP-47 локалей для SpeechSynthesis.
+const SPEECH_LOCALES = {
+  de: 'de-DE',
+  en: 'en-US',
+  es: 'es-ES',
+  fr: 'fr-FR',
+  pt: 'pt-PT',
+};
+
 export function useSpeech() {
   const [speechSupported, setSpeechSupported] = useState(true);
   const [speakingIdx, setSpeakingIdx] = useState(null);
@@ -9,7 +19,10 @@ export function useSpeech() {
     if (!window.speechSynthesis) setSpeechSupported(false);
   }, []);
 
-  const speak = (sentence, idx) => {
+  // lang — код изучаемого языка ('de', 'en', 'es', 'fr', 'pt'). Если не
+  // передан, сохраняем прежнее поведение по умолчанию (немецкий), чтобы не
+  // сломать существующие вызовы из Reader.jsx.
+  const speak = (sentence, idx, lang = 'de') => {
     if (!speechSupported) {
       alert('Ваш браузер не поддерживает озвучивание');
       return;
@@ -21,7 +34,7 @@ export function useSpeech() {
     }
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(sentence.original.trim());
-    u.lang = 'de-DE';
+    u.lang = SPEECH_LOCALES[lang] || SPEECH_LOCALES.de;
     u.rate = 0.9;
     u.onend = () => setSpeakingIdx(null);
     u.onerror = () => setSpeakingIdx(null);

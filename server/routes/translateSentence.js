@@ -1,9 +1,19 @@
 const router = require('express').Router();
 const fetch = require('node-fetch'); // <-- добавлено
 
+// Поддерживаемые изучаемые языки (Settings.jsx) и их коды для Google Translate.
+// Раньше sl (source language) был захардкожен на 'de' — из-за этого перевод
+// всегда шёл "с немецкого", даже если пользователь изучает другой язык.
+const SUPPORTED_SOURCE_LANGS = new Set(['de', 'en', 'es', 'fr', 'pt']);
+
+function resolveSourceLang(targetLang) {
+  return SUPPORTED_SOURCE_LANGS.has(targetLang) ? targetLang : 'de';
+}
+
 // ─── Одиночный перевод ──────────────────────────────────────────────────────
 router.post('/translate-sentence', async (req, res) => {
-  const { sentence, sentences } = req.body;
+  const { sentence, sentences, targetLang } = req.body;
+  const sl = resolveSourceLang(targetLang);
 
   // Батч-перевод
   if (sentences && Array.isArray(sentences)) {
@@ -11,7 +21,7 @@ router.post('/translate-sentence', async (req, res) => {
       const translations = await Promise.all(
         sentences.map(async (text) => {
           const response = await fetch(
-            `https://translate.googleapis.com/translate_a/single?client=gtx&sl=de&tl=ru&dt=t&q=${encodeURIComponent(text)}`
+            `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=ru&dt=t&q=${encodeURIComponent(text)}`
           );
           const data = await response.json();
           return data[0]?.[0]?.[0] || '';
@@ -31,7 +41,7 @@ router.post('/translate-sentence', async (req, res) => {
 
   try {
     const response = await fetch(
-      `https://translate.googleapis.com/translate_a/single?client=gtx&sl=de&tl=ru&dt=t&q=${encodeURIComponent(sentence)}`
+      `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=ru&dt=t&q=${encodeURIComponent(sentence)}`
     );
     const data = await response.json();
     const translated = data[0]?.[0]?.[0] || '';

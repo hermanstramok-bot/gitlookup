@@ -29,11 +29,14 @@ async function throttlePromises(promises, limit = 5) {
   return results;
 }
 
-export function useTranslations(visibleSentences, materialId) {
+export function useTranslations(visibleSentences, materialId, targetLang = 'de') {
   const [translations, setTranslations] = useState({});
   const translationCache = useRef(new Map());
   const pendingSet = useRef(new Set());
   const abortControllerRef = useRef(null);
+  // Кэш и pending-множество завязаны на язык: при смене targetLang старые
+  // переводы (на другом языке) не должны попадать в выдачу как валидные.
+  const cacheLangRef = useRef(targetLang);
 
   useEffect(() => {
     // Отменяем предыдущие запросы
@@ -42,6 +45,14 @@ export function useTranslations(visibleSentences, materialId) {
     }
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
+
+    // Если сменился изучаемый язык — сбрасываем кэш и текущее состояние,
+    // иначе увидим "старые" переводы на предыдущем языке.
+    if (cacheLangRef.current !== targetLang) {
+      translationCache.current.clear();
+      pendingSet.current.clear();
+      cacheLangRef.current = targetLang;
+    }
 
     const fetchTranslations = async () => {
       if (!visibleSentences || visibleSentences.length === 0) {
@@ -77,7 +88,7 @@ export function useTranslations(visibleSentences, materialId) {
           try {
             const data = await apiFetch('/api/translate-sentence', {
               method: 'POST',
-              body: JSON.stringify({ sentence: s.original || s.text }),
+              body: JSON.stringify({ sentence: s.original || s.text, targetLang }),
               signal: abortController.signal
             });
             return { id: s.id, translation: data.translation || '' };
@@ -127,7 +138,7 @@ export function useTranslations(visibleSentences, materialId) {
       // Не удаляем из кэша, но очищаем pending – отменённые запросы будут перезапрошены
       pendingSet.current.clear();
     };
-  }, [visibleSentences, materialId]);
+  }, [visibleSentences, materialId, targetLang]);
 
   return { translations };
 }

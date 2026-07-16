@@ -3,15 +3,85 @@ const prisma = require('../prismaClient');
 const authenticateToken = require('../middleware/auth');
 const { clearTextCache } = require('./texts');
 
+// Та же логика нормализации, что и на фронте (client/src/utils/normalizeWord.js),
+// чтобы подсчёт совпадал 1-в-1 с тем, что подсвечивается в Reader/VideoReader.
+// Немецкая локаль важна для корректной обработки ß/ẞ и т.п.
+function normalizeWord(word) {
+  if (!word) return '';
+  return word.trim().toLocaleLowerCase('de');
+}
+
+// Убираем пунктуацию по краям слова — так же, как cleanWord в useWordPanel.js
+// на фронте перед сохранением слова в словарь.
+function cleanWord(word) {
+  if (!word) return '';
+  return word.replace(/^[^\p{L}\p{N}\-']+|[^\p{L}\p{N}\-']+$/gu, '');
+}
+
+// Разбивает произвольный текст на нормализованный Set уникальных слов.
+function extractUniqueNormalizedWords(text) {
+  if (!text) return new Set();
+  const rawWords = text.split(/\s+/).filter(Boolean);
+  const result = new Set();
+  for (const raw of rawWords) {
+    const cleaned = cleanWord(raw);
+    if (!cleaned) continue;
+    result.add(normalizeWord(cleaned));
+  }
+  return result;
+}
+
+// Считает количество уникальных слов материала, которые пользователь уже
+// сохранил в словарь (vocab) со статусом 'new' или 'learning'. Каждое слово
+// считается один раз, даже если встречается в тексте многократно.
+function countNewWords(materialText, userVocabNormalizedSet) {
+  const materialWords = extractUniqueNormalizedWords(materialText);
+  let count = 0;
+  for (const w of materialWords) {
+    if (userVocabNormalizedSet.has(w)) count++;
+  }
+  return count;
+}
+
 // GET /api/materials
 router.get('/materials', authenticateToken, async (req, res) => {
   const userId = req.user.id;
   try {
     const materials = await prisma.material.findMany({
       where: { userId },
-      orderBy: { id: 'desc' }
+      orderBy: { id: 'desc' },
+      include: {
+        // Для видео нужен текст субтитров, чтобы посчитать новые слова.
+        subtitles: { select: { lineText: true } }
+      }
     });
-    res.json(materials);
+
+    // Словарь пользователя (только new/learning) — тянем один раз, а не на
+    // каждый материал в цикле, и сразу нормализуем.
+    const vocabEntries = await prisma.vocab.findMany({
+      where: { userId, status: { in: ['new', 'learning'] } },
+      select: { word: true }
+    });
+    const userVocabNormalizedSet = new Set(
+      vocabEntries.map(v => normalizeWord(cleanWord(v.word)))
+    );
+
+    const result = materials.map((m) => {
+      let fullText = '';
+      if (m.type === 'video') {
+        fullText = (m.subtitles || []).map(s => s.lineText).join(' ');
+      } else {
+        fullText = m.rawContent || '';
+      }
+      const newWordsCount = countNewWords(fullText, userVocabNormalizedSet);
+
+      // Не отдаём subtitles/rawContent целиком в списке — они там не нужны
+      // фронту (Library.jsx показывает только карточки) и раздувают ответ.
+      const { subtitles, rawContent, ...rest } = m;
+      return { ...rest, newWordsCount };
+    });
+
+    res.json(result);
   } catch (err) {
     console.error('Error fetching materials:', err);
     res.status(500).json({ error: 'Failed to fetch materials' });

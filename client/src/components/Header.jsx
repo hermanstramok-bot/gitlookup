@@ -3,10 +3,47 @@ import { useRef, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ThemeToggle from './ThemeToggle';
 
+// Иконки изучаемых языков (лежат в /public/icons/lang/).
+// ВНИМАНИЕ: имена файлов взяты как есть с диска, включая опечатку в
+// spanich_circle.png и отсутствие "_circle" в portuguese.png — если
+// переименуете файлы, поправьте пути здесь.
+// english_circle.png в текущем дереве проекта НЕ НАЙДЕН — нужно добавить
+// файл с таким именем в /public/icons/lang/, иначе иконка английского будет битой.
+const LANG_ICONS = {
+  de: { src: '/icons/lang/german_circle.png', title: 'Изучаемый язык: немецкий' },
+  en: { src: '/icons/lang/english_circle.png', title: 'Изучаемый язык: английский' },
+  es: { src: '/icons/lang/spanich_circle.png', title: 'Изучаемый язык: испанский' },
+  fr: { src: '/icons/lang/french_circle.png', title: 'Изучаемый язык: французский' },
+  pt: { src: '/icons/lang/portuguese.png', title: 'Изучаемый язык: португальский' },
+};
+const DEFAULT_LANG = 'de';
+
 export default function Header() {
   const location = useLocation();
   const isActive = (path) => location.pathname === path;
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  // Изучаемый язык — берём из localStorage (Settings.jsx пишет туда же).
+  // Синхронизируется между вкладками через 'storage', а в пределах одной
+  // вкладки — через кастомное событие 'targetLangChange' (localStorage
+  // не шлёт 'storage' в том же документе, где было изменение).
+  const [targetLang, setTargetLang] = useState(() => {
+    return localStorage.getItem('targetLang') || DEFAULT_LANG;
+  });
+
+  useEffect(() => {
+    const syncFromStorage = () => {
+      setTargetLang(localStorage.getItem('targetLang') || DEFAULT_LANG);
+    };
+    window.addEventListener('storage', syncFromStorage);
+    window.addEventListener('targetLangChange', syncFromStorage);
+    return () => {
+      window.removeEventListener('storage', syncFromStorage);
+      window.removeEventListener('targetLangChange', syncFromStorage);
+    };
+  }, []);
+
+  const langIcon = LANG_ICONS[targetLang] || LANG_ICONS[DEFAULT_LANG];
 
   // Для десктопного подчёркивания
   const libraryRef = useRef(null);
@@ -117,6 +154,10 @@ export default function Header() {
               >
                 ⚙️ Настройки
               </Link>
+              <div className="flex items-center gap-2 text-white text-sm">
+                <img src={langIcon.src} alt={langIcon.title} className="h-5 w-5" title={langIcon.title} />
+                <span className="opacity-80">{langIcon.title.replace('Изучаемый язык: ', '')}</span>
+              </div>
               <div className="pt-4 mt-auto">
                 <ThemeToggle />
               </div>
@@ -161,12 +202,12 @@ export default function Header() {
               Тренажёр
             </Link>
 
-            {/* Флаг немецкого языка между Словарём и Настройками */}
+            {/* Флаг изучаемого языка между Словарём и Настройками */}
             <img
-              src="/icons/lang/german_circle.png"
-              alt="язык: немецкий"
+              src={langIcon.src}
+              alt={langIcon.title}
               className="h-6 w-6"
-              title="Изучаемый язык: немецкий"
+              title={langIcon.title}
             />
 
             <Link

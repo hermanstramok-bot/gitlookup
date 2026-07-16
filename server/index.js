@@ -16,6 +16,7 @@ const materialsRouter = require('./routes/materials');
 const translateRouter = require('./routes/translateSentence');
 const flashcardsRouter = require('./routes/flashcards');
 const gamesRouter = require('./routes/games');
+const settingsRouter = require('./routes/settings'); // ← ДОБАВЛЕНО: настройки пользователя (targetLang, subtitleLines)
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -63,6 +64,7 @@ app.use('/api', foldersRouter);
 app.use('/api', importRouter);
 app.use('/api', materialsRouter);
 app.use('/api', translateRouter);
+app.use('/api', settingsRouter); // ← ДОБАВЛЕНО: даёт /api/user/settings (GET, PATCH)
 
 // ─── Новые роуты для флешкарт и игр ───────────────────────
 app.use('/api/flashcards', flashcardsRouter);

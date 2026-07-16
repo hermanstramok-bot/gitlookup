@@ -256,16 +256,24 @@ function MaterialCard({ item, onOpen, onEdit, onDelete, onMove, onDragStart, onD
             <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
               {formatDate(item.imported_at || item.createdAt)}
             </p>
-            {status && (
-              <div className="mt-1" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2 mt-1 flex-wrap" onClick={(e) => e.stopPropagation()}>
+              {status && (
                 <span
                   onClick={onToggleStatus}
                   className={`${status.className} rounded-full px-2 py-0.5 text-xs font-medium cursor-pointer hover:opacity-80 transition`}
                 >
                   {status.label}
                 </span>
-              </div>
-            )}
+              )}
+              {typeof item.newWordsCount === 'number' && item.newWordsCount > 0 && (
+                <span
+                  className="bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-200 rounded-full px-2 py-0.5 text-xs font-medium"
+                  title="Слов из категорий «Новые» и «Изучаю», встречающихся в этом материале"
+                >
+                  📘 {item.newWordsCount}
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -496,6 +504,8 @@ export default function Library() {
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [authorFilter, setAuthorFilter] = useState('all');
+  const [sortOrder, setSortOrder] = useState('date-desc'); // 'date-desc' | 'date-asc'
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
@@ -717,11 +727,34 @@ export default function Library() {
   };
 
   // ===== Фильтрация и группировка =====
+  const uniqueAuthors = useMemo(() => {
+    const authors = new Set();
+    materials.forEach((m) => { if (m.author) authors.add(m.author); });
+    return Array.from(authors).sort((a, b) => a.localeCompare(b));
+  }, [materials]);
+
   const filteredMaterials = useMemo(() => {
-    if (!searchTerm) return materials;
-    const term = searchTerm.toLowerCase();
-    return materials.filter((m) => m.title.toLowerCase().includes(term));
-  }, [materials, searchTerm]);
+    let result = materials;
+
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      result = result.filter((m) => m.title.toLowerCase().includes(term));
+    }
+
+    if (authorFilter !== 'all') {
+      result = result.filter((m) => m.author === authorFilter);
+    }
+
+    // Сортировка по дате добавления. Копируем массив — не мутируем исходный
+    // result (который может быть той же ссылкой, что и materials).
+    const sorted = [...result].sort((a, b) => {
+      const dateA = new Date(a.imported_at || a.createdAt).getTime();
+      const dateB = new Date(b.imported_at || b.createdAt).getTime();
+      return sortOrder === 'date-asc' ? dateA - dateB : dateB - dateA;
+    });
+
+    return sorted;
+  }, [materials, searchTerm, authorFilter, sortOrder]);
 
   const groupedByFolder = useMemo(() => {
     const grouped = new Map();

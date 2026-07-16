@@ -1,6 +1,17 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { apiFetch } from '../utils/api';
+
+// Поддерживаемые изучаемые языки. Единственный источник правды для селекта
+// в этом файле и для карты иконок в Header.jsx (держите синхронизировано).
+const TARGET_LANGUAGES = [
+  { code: 'de', label: 'Немецкий' },
+  { code: 'es', label: 'Испанский' },
+  { code: 'en', label: 'Английский' },
+  { code: 'fr', label: 'Французский' },
+  { code: 'pt', label: 'Португальский' },
+];
 
 export default function Settings() {
   const { user, logout } = useAuth();
@@ -23,6 +34,12 @@ export default function Settings() {
     return localStorage.getItem('translationLang') || 'ru';
   });
 
+  // Количество строк субтитров: 1 или 2
+  const [subtitleLines, setSubtitleLines] = useState(() => {
+    const saved = Number(localStorage.getItem('subtitleLines'));
+    return saved === 2 ? 2 : 1;
+  });
+
   // Настройки Ридера
   const [readerFont, setReaderFont] = useState(() => {
     return localStorage.getItem('readerFont') || 'sans';
@@ -31,13 +48,82 @@ export default function Settings() {
     return localStorage.getItem('readerVoice') || 'male';
   });
 
+  // Настройки targetLang/subtitleLines синхронизируются с бэкендом
+  // (нужны на сервере — например, для подбора субтитров нужного языка).
+  // Остальные настройки (интерфейс, перевод, шрифт, голос) пока только локальные.
+  const [settingsLoading, setSettingsLoading] = useState(true);
+  const [settingsError, setSettingsError] = useState(null);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+
+  // Загружаем настройки пользователя с бэкенда при монтировании.
+  // Если запрос не удался — остаёмся на значениях из localStorage
+  // и просто предупреждаем пользователя, не блокируя работу со страницей.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await apiFetch('/api/user/settings');
+        if (cancelled) return;
+        if (data?.targetLang) setTargetLang(data.targetLang);
+        if (data?.subtitleLines === 1 || data?.subtitleLines === 2) {
+          setSubtitleLines(data.subtitleLines);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Не удалось загрузить настройки пользователя:', err);
+          setSettingsError('Не удалось загрузить настройки с сервера. Используются локальные значения.');
+        }
+      } finally {
+        if (!cancelled) setSettingsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Локальный кэш (localStorage) — как и раньше, для мгновенного чтения
+  // другими компонентами (например, Header читает targetLang синхронно).
   useEffect(() => {
     localStorage.setItem('interfaceLang', interfaceLang);
-    localStorage.setItem('targetLang', targetLang);
     localStorage.setItem('translationLang', translationLang);
     localStorage.setItem('readerFont', readerFont);
     localStorage.setItem('readerVoice', readerVoice);
-  }, [interfaceLang, targetLang, translationLang, readerFont, readerVoice]);
+  }, [interfaceLang, translationLang, readerFont, readerVoice]);
+
+  useEffect(() => {
+    localStorage.setItem('targetLang', targetLang);
+    // 'storage' событие не приходит в том же документе — уведомляем Header вручную.
+    window.dispatchEvent(new Event('targetLangChange'));
+  }, [targetLang]);
+
+  useEffect(() => {
+    localStorage.setItem('subtitleLines', String(subtitleLines));
+  }, [subtitleLines]);
+
+  // Сохраняем targetLang/subtitleLines на бэкенде с небольшим дебаунсом,
+  // чтобы не слать запрос на каждый чих при быстром переключении.
+  useEffect(() => {
+    // Не шлём на сервер значения, пока не подтянули изначальные данные —
+    // иначе можем на долю секунды перезаписать серверные настройки дефолтом.
+    if (settingsLoading) return;
+
+    const timeout = setTimeout(async () => {
+      setSettingsSaving(true);
+      try {
+        await apiFetch('/api/user/settings', {
+          method: 'PATCH',
+          body: JSON.stringify({ targetLang, subtitleLines }),
+        });
+        setSettingsError(null);
+      } catch (err) {
+        console.error('Не удалось сохранить настройки пользователя:', err);
+        setSettingsError('Не удалось сохранить настройки на сервере. Изменения сохранены только локально.');
+      } finally {
+        setSettingsSaving(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(timeout);
+  }, [targetLang, subtitleLines, settingsLoading]);
 
   // Редактирование ника
   const [editNickname, setEditNickname] = useState(false);
@@ -208,13 +294,16 @@ export default function Settings() {
                   <select
                     value={targetLang}
                     onChange={(e) => setTargetLang(e.target.value)}
-                    className="w-full md:w-64 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    disabled={settingsLoading}
+                    className="w-full md:w-64 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-60"
                   >
-                    <option value="de">Немецкий</option>
-                    <option value="en">Английский</option>
-                    <option value="fr">Французский</option>
-                    <option value="es">Испанский</option>
+                    {TARGET_LANGUAGES.map(({ code, label }) => (
+                      <option key={code} value={code}>{label}</option>
+                    ))}
                   </select>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Влияет на иконку языка в шапке, поиск субтитров и язык перевода в модальном окне.
+                  </p>
                 </div>
 
                 <div>
@@ -234,8 +323,13 @@ export default function Settings() {
                 </div>
 
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-4">
-                  Настройки языка сохраняются автоматически
+                  {settingsSaving
+                    ? 'Сохранение изучаемого языка на сервере...'
+                    : 'Настройки языка сохраняются автоматически'}
                 </p>
+                {settingsError && (
+                  <p className="text-xs text-red-500 dark:text-red-400">{settingsError}</p>
+                )}
               </div>
             )}
 
@@ -319,9 +413,45 @@ export default function Settings() {
                   </div>
                 </div>
 
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Количество строк субтитров
+                  </label>
+                  <div className="flex gap-6">
+                    <label className="inline-flex items-center text-gray-700 dark:text-gray-300">
+                      <input
+                        type="radio"
+                        value={1}
+                        checked={subtitleLines === 1}
+                        onChange={() => setSubtitleLines(1)}
+                        className="form-radio text-blue-600 dark:text-blue-400"
+                      />
+                      <span className="ml-2">1 строка</span>
+                    </label>
+                    <label className="inline-flex items-center text-gray-700 dark:text-gray-300">
+                      <input
+                        type="radio"
+                        value={2}
+                        checked={subtitleLines === 2}
+                        onChange={() => setSubtitleLines(2)}
+                        className="form-radio text-blue-600 dark:text-blue-400"
+                      />
+                      <span className="ml-2">2 строки</span>
+                    </label>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Применяется в видеоплеере и при записи видео.
+                  </p>
+                </div>
+
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-4">
-                  Настройки сохраняются автоматически
+                  {settingsSaving
+                    ? 'Сохранение настроек субтитров на сервере...'
+                    : 'Настройки сохраняются автоматически'}
                 </p>
+                {settingsError && (
+                  <p className="text-xs text-red-500 dark:text-red-400">{settingsError}</p>
+                )}
               </div>
             )}
           </div>
