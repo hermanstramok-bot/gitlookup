@@ -44,6 +44,22 @@ const getPoint = (e) => {
   return { x: e.clientX, y: e.clientY };
 };
 
+const VIDEO_DEFAULT_WIDTH = 384;
+const VIDEO_DEFAULT_HEIGHT = 216;
+const VIDEO_MARGIN = 20;
+
+// Плавающее окно видео стартует с 384×216 (16:9) на десктопе, но на узких
+// телефонах x:20 + width:384 вылезает за правый край экрана и вызывает
+// горизонтальный скролл всей страницы. Считаем стартовый размер от реальной
+// ширины окна, сохраняя пропорции.
+function getInitialVideoBox() {
+  if (typeof window === 'undefined') return { width: VIDEO_DEFAULT_WIDTH, height: VIDEO_DEFAULT_HEIGHT };
+  const maxWidth = window.innerWidth - VIDEO_MARGIN * 2;
+  const width = Math.max(220, Math.min(VIDEO_DEFAULT_WIDTH, maxWidth));
+  const height = width / (VIDEO_DEFAULT_WIDTH / VIDEO_DEFAULT_HEIGHT);
+  return { width, height };
+}
+
 export default function VideoReader() {
   const { t: translate } = useI18n();
   const { id } = useParams();
@@ -87,10 +103,14 @@ export default function VideoReader() {
   const [viewMode, setViewMode] = useState('subtitles');
 
   const [isVideoMinimized, setIsVideoMinimized] = useState(false);
+  // Дефолтные 384×216 (16:9) не помещаются по ширине на узких телефонах
+  // (x:20 + width:384 вылезает за viewport и вызывает горизонтальный скролл
+  // всей страницы) — считаем стартовый размер от реального innerWidth,
+  // сохраняя пропорции 16:9.
+  const [videoSize, setVideoSize] = useState(() => getInitialVideoBox());
   const [videoPosition, setVideoPosition] = useState({ x: 20, y: 80 });
-  const [videoSize, setVideoSize] = useState({ width: 384, height: 216 });
   const videoRef = useRef(null);
-  const videoSizeRef = useRef({ width: 384, height: 216 });
+  const videoSizeRef = useRef(getInitialVideoBox());
 
   const dragging = useRef(false);
   const dragOffset = useRef({ x: 0, y: 0 });
@@ -412,6 +432,35 @@ export default function VideoReader() {
     document.addEventListener('touchend', onEnd);
     document.addEventListener('touchcancel', onEnd);
   }, [saveCurrentTime]);
+
+  // Пересчитываем позицию/размер плавающего окна видео при повороте экрана
+  // или изменении размера окна — та же логика клампинга, что и при drag/
+  // resize вручную, чтобы окно не оставалось шире нового viewport.
+  useEffect(() => {
+    const clampToViewport = () => {
+      const el = videoRef.current;
+      if (!el) return;
+      const maxX = Math.max(0, window.innerWidth - el.offsetWidth);
+      const maxY = Math.max(0, window.innerHeight - el.offsetHeight);
+      const x = Math.min(videoPositionRef.current.x, maxX);
+      const y = Math.min(videoPositionRef.current.y, maxY);
+      if (x !== videoPositionRef.current.x || y !== videoPositionRef.current.y) {
+        videoPositionRef.current = { x, y };
+        setVideoPosition({ x, y });
+      }
+
+      const maxW = window.innerWidth - x - VIDEO_MARGIN;
+      if (el.offsetWidth > maxW && maxW >= 220) {
+        const aspect = videoSizeRef.current.width / videoSizeRef.current.height;
+        const width = maxW;
+        const height = width / aspect;
+        videoSizeRef.current = { width, height };
+        setVideoSize({ width, height });
+      }
+    };
+    window.addEventListener('resize', clampToViewport);
+    return () => window.removeEventListener('resize', clampToViewport);
+  }, []);
 
   const findActiveSubtitle = useCallback((timeMs) => {
     const subs = subtitles;
@@ -995,7 +1044,7 @@ export default function VideoReader() {
       )}
 
       {wordPanel.selectedWord && (
-        <div className="fixed top-20 right-5 z-50 w-96 max-h-[90vh] overflow-y-auto shadow-2xl rounded-2xl border border-[#EDE9E1] dark:border-[#2A3644]">
+        <div className="fixed top-20 left-4 right-4 sm:left-auto sm:right-5 sm:w-96 z-50 max-h-[90vh] overflow-y-auto shadow-2xl rounded-2xl border border-[#EDE9E1] dark:border-[#2A3644]">
           <WordPanel
             canonicalWord={wordPanel.canonicalWord}
             wordTranslation={wordPanel.wordTranslation}

@@ -708,7 +708,7 @@ export default function Reader() {
       </div>
 
       {wordPanel.selectedWord && (
-        <div className="fixed top-20 right-5 z-50 w-96 max-h-[90vh] overflow-y-auto shadow-2xl rounded-2xl border border-[#EDE9E1] dark:border-[#2A3644]">
+        <div className="fixed top-20 left-4 right-4 sm:left-auto sm:right-5 sm:w-96 z-50 max-h-[90vh] overflow-y-auto shadow-2xl rounded-2xl border border-[#EDE9E1] dark:border-[#2A3644]">
           <WordPanel
             canonicalWord={wordPanel.canonicalWord}
             wordTranslation={wordPanel.wordTranslation}
