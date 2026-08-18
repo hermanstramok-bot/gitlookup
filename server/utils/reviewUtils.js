@@ -109,8 +109,10 @@ function getMaterialFullText(material) {
 // Spec 2: known / (known + learning), исключая New и Skipped.
 //
 // Возвращает { percentKnown, knownCount, learningCount, trackedWords }
-// trackedWords — массив { word, vocabId, status } для learning-слов,
-// нужен для экрана прохождения review (Spec 2: "review pass").
+// trackedWords — массив { word, vocabId, status } для New/Learning/Known-слов,
+// нужен для экрана прохождения review (Spec 2: "review pass"). Known-слова
+// включены, чтобы они не исчезали из прохода навсегда — пользователь должен
+// иметь возможность откатить их обратно на "Ещё учу".
 async function calculateMaterialReviewStats(materialId, userId) {
   const material = await prisma.material.findFirst({
     where: { id: materialId, userId },
@@ -161,6 +163,15 @@ async function calculateMaterialReviewStats(materialId, userId) {
     if (!entry) continue; // New-слово, не учитывается (Spec 2)
     if (entry.status === 'known') {
       knownCount++;
+      // Known-слова тоже показываются в проходе (с дефолтом "Знаю"), чтобы
+      // пользователь мог сделать downgrade обратно на "Ещё учу" — раньше они
+      // пропадали из трек-листа насовсем после первого "Знаю" в проходе.
+      trackedWords.push({
+        vocabId: entry.id,
+        word: entry.word,
+        translation: entry.translation,
+        status: entry.status
+      });
     } else if (entry.status === 'learning') {
       learningCount++;
       trackedWords.push({

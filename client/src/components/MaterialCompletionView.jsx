@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { apiFetch } from '../utils/api';
 import { useI18n } from '../context/I18nContext';
+import { IconClose } from '../design/designSystem';
 
 // Spec 2 (доп.): встроенный (не модальный) экран завершения материала —
 // подменяет собой область текста/видео при достижении конца материала.
@@ -301,6 +302,8 @@ function QuizPhase({ materialId, onStatusChange }) {
   const [result, setResult] = useState(null);
   const [archiving, setArchiving] = useState(false);
   const [archived, setArchived] = useState(false);
+  const [wordPendingHide, setWordPendingHide] = useState(null);
+  const [hiding, setHiding] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -309,10 +312,11 @@ function QuizPhase({ materialId, onStatusChange }) {
       setWords(data.words || []);
       // New и Learning по умолчанию считаются "Ещё учу" — пользователь сам
       // подтверждает каждое слово как "Знаю", если действительно его выучил.
-      // Known-слова в проход не попадают вовсе (см. calculateMaterialReviewStats
-      // в reviewUtils.js — trackedWords содержит только new/learning).
+      // Known остаётся "Знаю" по умолчанию, но слово всё равно показывается
+      // в проходе (см. calculateMaterialReviewStats в reviewUtils.js), чтобы
+      // можно было сделать downgrade обратно на "Ещё учу" ("не помню").
       const initial = {};
-      (data.words || []).forEach(w => { initial[w.vocabId] = 'learning'; });
+      (data.words || []).forEach(w => { initial[w.vocabId] = w.status === 'known' ? 'known' : 'learning'; });
       setDecisions(initial);
     } catch (err) {
       console.error('Ошибка загрузки review pass:', err);
@@ -341,6 +345,33 @@ function QuizPhase({ materialId, onStatusChange }) {
       alert(t('material_completion_error_save_pass'));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // Скрыть слово в этом тексте (Spec 1: per-material skip, тот же механизм,
+  // что и "Пропустить в этом тексте" в WordPanel) — слово перестаёт
+  // учитываться для ЭТОГО материала (в % known и в будущих проходах), но
+  // остаётся в общем словаре пользователя и в других материалах.
+  const handleHideWord = async () => {
+    if (!wordPendingHide) return;
+    setHiding(true);
+    try {
+      await apiFetch(`/api/materials/${materialId}/skipped-words`, {
+        method: 'POST',
+        body: JSON.stringify({ word: wordPendingHide.word }),
+      });
+      setWords(prev => prev.filter(w => w.vocabId !== wordPendingHide.vocabId));
+      setDecisions(prev => {
+        const next = { ...prev };
+        delete next[wordPendingHide.vocabId];
+        return next;
+      });
+      setWordPendingHide(null);
+    } catch (err) {
+      console.error('Ошибка скрытия слова в тексте:', err);
+      alert(t('material_completion_error_hide_word'));
+    } finally {
+      setHiding(false);
     }
   };
 
@@ -428,7 +459,7 @@ function QuizPhase({ materialId, onStatusChange }) {
                     </span>
                   )}
                 </div>
-                <div className="flex gap-1.5 flex-shrink-0">
+                <div className="flex items-center gap-1.5 flex-shrink-0">
                   <button
                     onClick={() => setDecision(w.vocabId, 'known')}
                     className={`text-xs font-medium px-3 py-1.5 rounded-full transition border ${
@@ -447,7 +478,17 @@ function QuizPhase({ materialId, onStatusChange }) {
                         : 'border-[#CBD5E1] dark:border-[#35465C] text-[#334155] dark:text-[#CBD5E1] hover:bg-white dark:hover:bg-[#263447]'
                     }`}
                   >
-                    {t('material_completion_still_learning')}
+                    {/* Для слов, уже известных (Known), формулируем downgrade как
+                        "Не помню" — это точнее описывает действие, чем "Ещё учу",
+                        которое используется для New/Learning. */}
+                    {w.status === 'known' ? t('material_completion_forgot') : t('material_completion_still_learning')}
+                  </button>
+                  <button
+                    onClick={() => setWordPendingHide(w)}
+                    title={t('material_completion_hide_word_title')}
+                    className="text-[#94A3B8] dark:text-[#64748B] hover:text-[#DC2626] dark:hover:text-[#F87171] transition p-1.5 rounded-full hover:bg-white dark:hover:bg-[#263447]"
+                  >
+                    <IconClose className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
@@ -468,6 +509,37 @@ function QuizPhase({ materialId, onStatusChange }) {
           {submitting ? t('material_completion_saving') : t('material_completion_finish_pass')}
         </button>
       </div>
+
+      {wordPendingHide && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-[#16202E] rounded-2xl max-w-sm w-full shadow-2xl p-5">
+            <h3 className="text-base font-semibold text-[#0F172A] dark:text-white mb-2">
+              {t('material_completion_hide_confirm_title')}
+            </h3>
+            <p className="text-sm text-[#64748B] dark:text-[#94A3B8] mb-5">
+              {t('material_completion_hide_confirm_message', { word: wordPendingHide.word })}
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setWordPendingHide(null)}
+                disabled={hiding}
+                className="px-4 py-2 border border-[#CBD5E1] dark:border-[#35465C] rounded-full text-[#334155] dark:text-[#CBD5E1] text-sm font-medium hover:bg-[#F8FAFC] dark:hover:bg-[#1E2A3B] transition disabled:opacity-50"
+              >
+                {t('common_cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={handleHideWord}
+                disabled={hiding}
+                className="px-4 py-2 bg-[#DC2626] hover:bg-[#B91C1C] disabled:opacity-50 text-white rounded-full text-sm font-medium transition"
+              >
+                {hiding ? t('material_completion_saving') : t('material_completion_hide_confirm_action')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

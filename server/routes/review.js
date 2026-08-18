@@ -140,9 +140,9 @@ router.get('/materials/:id/review', authenticateToken, async (req, res) => {
       percentKnown: stats?.percentKnown ?? null,
       knownCount: stats?.knownCount ?? 0,
       learningCount: stats?.learningCount ?? 0,
-      // Слова для прохождения review — только Learning (Spec 2: "user goes
-      // through the material's Learning words, marking each as known or
-      // still-learning").
+      // Слова для прохождения review — New/Learning/Known (Known тоже
+      // показываются, чтобы их можно было откатить обратно на "Ещё учу";
+      // см. calculateMaterialReviewStats в reviewUtils.js).
       words: stats?.trackedWords ?? [],
     });
   } catch (err) {
