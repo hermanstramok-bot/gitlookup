@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, useSearchParams, Link } from 'react-router-dom';
 import { apiFetch } from '../utils/api';
-import { useAuth } from '../context/AuthContext';
 import WordPanel from '../components/WordPanel';
 import BookMode from '../components/BookMode';
 import StudyMode from '../components/StudyMode';
@@ -14,6 +13,13 @@ import { useTranslations } from '../hooks/useTranslations';
 import { useReaderScroll } from '../hooks/useReaderScroll';
 import { usePagination } from '../hooks/usePagination';
 import { normalizeWord } from '../utils/normalizeWord';
+import MaterialCompletionView from '../components/MaterialCompletionView';
+import LiveWordDictionary from '../components/LiveWordDictionary';
+import { useI18n } from '../context/I18nContext';
+import {
+  sans, serif, useLibraryFonts,
+  IconArrowLeft, IconBookmark, IconTrash,
+} from '../design/designSystem';
 
 const BOOKMODE_RANGE = 20;
 
@@ -22,13 +28,39 @@ const modeKey = (id) => `reader_last_mode_${id}`;
 const bookPosKey = (id) => `reader_pos_book_${id}`;
 const studyPosKey = (id) => `reader_pos_study_${id}`;
 
+// Spec 2 (доп., п.10): язык перевода — настоящая настройка (Settings.jsx).
+const getTranslationLang = () => localStorage.getItem('translationLang') || 'ru';
+const getTargetLang = () => localStorage.getItem('targetLang') || 'de';
+
 export default function Reader() {
+  const { t } = useI18n();
   const { id } = useParams();
-  const { user, logout } = useAuth();
+  const [searchParams] = useSearchParams();
+  const reviewMode = searchParams.get('mode') === 'review';
   const [text, setText] = useState(null);
   const [loading, setLoading] = useState(true);
   // Дефолт при самом первом запуске (нет сохранённых данных) — Study Mode.
   const [bookMode, setBookMode] = useState(false);
+  // Spec 2 (доп., п.10): targetLang/translationLang настраиваются в
+  // Settings.jsx и хранятся в localStorage; слушаем изменения, чтобы
+  // подхватить их без перезагрузки, если пользователь поменял их в другой вкладке.
+  const [targetLang, setTargetLangState] = useState(getTargetLang);
+  const [translationLang, setTranslationLang] = useState(getTranslationLang);
+  useEffect(() => {
+    const syncSettings = () => {
+      setTargetLangState(getTargetLang());
+      setTranslationLang(getTranslationLang());
+    };
+    window.addEventListener('storage', syncSettings);
+    window.addEventListener('targetLangChange', syncSettings);
+    window.addEventListener('interfaceLangChange', syncSettings);
+    return () => {
+      window.removeEventListener('storage', syncSettings);
+      window.removeEventListener('targetLangChange', syncSettings);
+      window.removeEventListener('interfaceLangChange', syncSettings);
+    };
+  }, []);
+
   const [showTranslations, setShowTranslations] = useState(() => {
     const saved = localStorage.getItem('reader_show_translations');
     return saved !== null ? saved === 'true' : false;
@@ -42,6 +74,42 @@ export default function Reader() {
   // режим будет готов (после загрузки текста, пагинации или скролла).
   const pendingSentenceRef = useRef(null); // для Book Mode
   const pendingPageRef = useRef(null);     // для Study Mode
+
+  // ============================================================
+  // SPEC 2 (доп.): встроенный экран завершения материала + статус материала
+  // ============================================================
+  // Снимок статусов слов материала на момент начала чтения (vocabId -> status).
+  // Нужен, чтобы на экране сводки показать, какие слова изменились именно
+  // за эту сессию чтения (не за всё время существования материала).
+  const sessionStartWordsRef = useRef(null);
+  const [materialStatus, setMaterialStatus] = useState(null);
+  const [justTransitioned, setJustTransitioned] = useState(false); // new -> viewed произошло в этой сессии
+  const [celebrationConsumed, setCelebrationConsumed] = useState(false);
+  const atEndHandledRef = useRef(false); // защита от повторного срабатывания перехода статуса за сессию
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch(`/api/materials/${id}/words`)
+      .then(data => {
+        if (cancelled) return;
+        const map = new Map();
+        (data.words || []).forEach(w => map.set(w.vocabId, w.status));
+        sessionStartWordsRef.current = map;
+      })
+      .catch(err => console.error('Ошибка загрузки снимка слов материала:', err));
+    return () => { cancelled = true; };
+  }, [id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    atEndHandledRef.current = false;
+    setJustTransitioned(false);
+    setCelebrationConsumed(false);
+    apiFetch(`/api/material/${id}`)
+      .then(data => { if (!cancelled) setMaterialStatus(data.status || 'new'); })
+      .catch(err => console.error('Ошибка загрузки статуса материала:', err));
+    return () => { cancelled = true; };
+  }, [id]);
 
   const { savedWords, setSavedWords, wordStatusMap } = useWords();
   const { speechSupported, speakingIdx, speak } = useSpeech();
@@ -81,6 +149,42 @@ export default function Reader() {
 
   const total = text?.sentences?.length || 0;
 
+  // ============================================================
+  // SPEC 2 (доп.): детект "дочитал до конца материала"
+  // Study Mode — последняя страница пагинации; Book Mode — долистал
+  // (доскроллил) до последнего предложения текста.
+  // ============================================================
+  const isAtEnd = bookMode
+    ? (total > 0 && currentSentenceIndex >= total - 1)
+    : (!isCalculating && totalPages > 0 && currentPage >= totalPages - 1);
+
+  // Spec 2 (доп., п.6.3): Review-страница — не точка невозврата. Пользователь
+  // может вручную вернуться к тексту (не потеряв позицию — он остаётся на
+  // последней странице) и потом вернуться обратно к словам. viewingCompletion
+  // отражает только это ручное переключение; сам факт isAtEnd не трогаем.
+  const [viewingCompletion, setViewingCompletion] = useState(false);
+  useEffect(() => {
+    setViewingCompletion(isAtEnd);
+  }, [isAtEnd]);
+
+  const showCompletionView = isAtEnd && viewingCompletion && materialStatus !== null;
+
+  // При первом достижении конца материала за сессию — если материал ещё
+  // никогда не был дочитан (status === 'new'), помечаем его "viewed" и
+  // показываем celebration-фазу ровно один раз за сессию.
+  useEffect(() => {
+    if (!isAtEnd || atEndHandledRef.current) return;
+    atEndHandledRef.current = true;
+    if (materialStatus === 'new') {
+      apiFetch(`/api/materials/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'viewed' }) })
+        .then(() => {
+          setMaterialStatus('viewed');
+          setJustTransitioned(true);
+        })
+        .catch(err => console.error('Ошибка обновления статуса материала:', err));
+    }
+  }, [showCompletionView, materialStatus, id]);
+
   const visibleSentences = useMemo(() => {
     if (!text?.sentences || total === 0) return [];
 
@@ -96,11 +200,20 @@ export default function Reader() {
     }
   }, [text, bookMode, currentSentenceIndex, startIndex, endIndex, total]);
 
-  const { translations } = useTranslations(visibleSentences, id);
+  const { translations } = useTranslations(visibleSentences, id, targetLang, translationLang);
 
   useEffect(() => {
     localStorage.setItem('reader_show_translations', String(showTranslations));
   }, [showTranslations]);
+
+  // Страница сама занимает весь экран (h-screen) и скроллит только внутри
+  // себя — но т.к. она вложена в общий Layout с Header/Footer, суммарная
+  // высота документа превышает 100vh и браузер добавляет лишний скроллбар
+  // справа. Блокируем скролл body, пока эта страница смонтирована.
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = ''; };
+  }, []);
 
   // При открытии книги (смена id) — восстанавливаем последний использованный
   // режим для ЭТОЙ книги и запоминаем, на какую позицию нужно перейти,
@@ -112,18 +225,20 @@ export default function Reader() {
     const initialBookMode = savedMode === 'book';
     setBookMode(initialBookMode);
 
+    // Spec 2 (доп.): review-режим всегда открывает материал с самого начала,
+    // игнорируя сохранённую позицию обычного чтения.
     if (initialBookMode) {
-      const savedPos = localStorage.getItem(bookPosKey(id));
+      const savedPos = reviewMode ? null : localStorage.getItem(bookPosKey(id));
       pendingSentenceRef.current = savedPos !== null ? Number(savedPos) : 0;
       pendingPageRef.current = null;
     } else {
-      const savedPos = localStorage.getItem(studyPosKey(id));
+      const savedPos = reviewMode ? null : localStorage.getItem(studyPosKey(id));
       pendingPageRef.current = savedPos !== null ? Number(savedPos) : 0;
       pendingSentenceRef.current = null;
     }
 
     return () => { if (window.speechSynthesis) window.speechSynthesis.cancel(); };
-  }, [id]);
+  }, [id, reviewMode]);
 
   // Применяем отложенную позицию для Book Mode, как только скролл готов.
   useEffect(() => {
@@ -146,16 +261,16 @@ export default function Reader() {
   // Непрерывно сохраняем текущую позицию для активного режима, чтобы при
   // следующем открытии книги (или после перезагрузки) продолжить с того же места.
   useEffect(() => {
-    if (bookMode && isReady) {
+    if (bookMode && isReady && !reviewMode) {
       localStorage.setItem(bookPosKey(id), String(currentSentenceIndex));
     }
-  }, [bookMode, isReady, currentSentenceIndex, id]);
+  }, [bookMode, isReady, currentSentenceIndex, id, reviewMode]);
 
   useEffect(() => {
-    if (!bookMode && !isCalculating) {
+    if (!bookMode && !isCalculating && !reviewMode) {
       localStorage.setItem(studyPosKey(id), String(currentPage));
     }
-  }, [bookMode, isCalculating, currentPage, id]);
+  }, [bookMode, isCalculating, currentPage, id, reviewMode]);
 
   const fetchText = async () => {
     setLoading(true);
@@ -302,9 +417,13 @@ export default function Reader() {
       }
 
       const normalizedWord = normalizeWord(word);
-      const statusFromMap = wordStatusMap.get(normalizedWord);
-      const isSaved = highlightMap.has(wordIndex) || !!statusFromMap;
-      const status = highlightMap.get(wordIndex) || statusFromMap;
+      // Spec 1: слово, пропущенное в этом материале, всегда рендерится как
+      // обычный текст — статус (New/Learning/Known) игнорируется только
+      // локально, здесь, глобальный словарь не трогаем.
+      const isSkipped = wordPanel.isWordSkipped(normalizedWord);
+      const statusFromMap = isSkipped ? undefined : wordStatusMap.get(normalizedWord);
+      const isSaved = !isSkipped && (highlightMap.has(wordIndex) || !!statusFromMap);
+      const status = isSkipped ? undefined : (highlightMap.get(wordIndex) || statusFromMap);
 
       const isHighlighted = wordPanel.selectedSentenceIndex === globalSentenceIndex && wordPanel.highlightedIndices.has(wordIndex);
       return (
@@ -313,39 +432,56 @@ export default function Reader() {
           onClick={() => handleWordClick(word, wordIndex, globalSentenceIndex)}
           className={`inline-block px-0.5 cursor-pointer transition-colors ${
             isHighlighted
-              ? 'bg-blue-300 dark:bg-blue-700 font-semibold rounded-md px-1 dark:text-white' // FIX: добавлен светлый текст
+              ? 'bg-[#3D5A80]/30 dark:bg-[#3D5A80]/50 font-semibold rounded-md px-1 text-[#0F1720] dark:text-white'
               : isSaved
               ? `${getStatusColor(status)} font-bold rounded-md px-1`
-              : 'hover:bg-yellow-200 dark:hover:bg-yellow-900 hover:rounded-md dark:text-gray-200' // FIX: добавлен цвет для тёмной темы
+              : 'hover:bg-[#E9C46A]/30 dark:hover:bg-[#E9C46A]/20 hover:rounded-md text-[#3D3B36] dark:text-[#D8D3C9]'
           }`}
         >
           {word}
         </span>
       );
     });
-  }, [savedWords, wordPanel.selectedSentenceIndex, wordPanel.highlightedIndices, handleWordClick, wordStatusMap]);
+  }, [savedWords, wordPanel.selectedSentenceIndex, wordPanel.highlightedIndices, handleWordClick, wordStatusMap, wordPanel.skippedWords]);
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'new':      return 'bg-blue-200 text-blue-900 dark:bg-blue-900 dark:text-blue-100';
-      case 'learning': return 'bg-yellow-200 text-yellow-900 dark:bg-yellow-900 dark:text-yellow-100';
-      case 'known':    return 'bg-green-200 text-green-900 dark:bg-green-900 dark:text-green-100';
-      default:         return 'bg-green-200 text-green-900 dark:bg-green-900 dark:text-green-100';
+      case 'new':      return 'bg-blue-500 text-white dark:bg-blue-500 dark:text-white';
+      case 'learning': return 'bg-yellow-500 text-white dark:bg-yellow-500 dark:text-white';
+      case 'known':    return 'bg-green-500 text-white dark:bg-green-500 dark:text-white';
+      default:         return 'bg-green-500 text-white dark:bg-green-500 dark:text-white';
     }
   };
 
+  // Тень для измерения высоты страниц ДОЛЖНА рендериться теми же элементами,
+  // что и StudyMode (иконка озвучки + border-l-4 pl-4 + per-word span'ы из
+  // renderWords) — иначе измеренная высота не совпадает с настоящей (spans с
+  // паддингом и более узкая из-за иконки колонка текста переносятся иначе),
+  // и последняя строка страницы обрезается контейнером с overflow-hidden.
   const renderShadowContent = useCallback(() => {
     if (!text?.sentences) return null;
     return (
       <div>
         {text.sentences.map((sentence, idx) => (
           <div key={sentence.id} data-page-item className="mb-4">
-            <div className="text-[20px]">{sentence.text}</div>
+            <div className="flex items-start gap-2">
+              {speechSupported && (
+                <span className="flex-shrink-0 mt-1">🔊</span>
+              )}
+              <div className="flex-1 border-l-4 border-gray-200 dark:border-gray-600 pl-4">
+                <p className="text-[20px]">{renderWords(sentence, idx)}</p>
+                {showTranslations && (
+                  <div className="text-sm mt-1 min-h-[1.5rem]">
+                    {translations[sentence.id] || ' '}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         ))}
       </div>
     );
-  }, [text]);
+  }, [text, renderWords, speechSupported, showTranslations, translations]);
 
   const hasBookmark = bookmarks.some(b => b.sentenceIndex === (bookMode ? currentSentenceIndex : startIndex));
   const handleToggleBookmark = () => {
@@ -377,87 +513,93 @@ export default function Reader() {
       // Study -> Book: берём первое предложение текущей страницы
       pendingSentenceRef.current = startIndex;
       pendingPageRef.current = null;
-      localStorage.setItem(bookPosKey(id), String(startIndex));
+      if (!reviewMode) localStorage.setItem(bookPosKey(id), String(startIndex));
     } else {
       // Book -> Study: находим страницу, содержащую текущее предложение
       const page = findPageForSentence(currentSentenceIndex);
       const safePage = page !== -1 ? page : 0;
       pendingPageRef.current = safePage;
       pendingSentenceRef.current = null;
-      localStorage.setItem(studyPosKey(id), String(safePage));
+      if (!reviewMode) localStorage.setItem(studyPosKey(id), String(safePage));
     }
 
     localStorage.setItem(modeKey(id), newBookMode ? 'book' : 'study');
     setBookMode(newBookMode);
   };
 
-  if (loading) return <div className="p-8 dark:text-gray-100 text-center">Загрузка...</div>;
-  if (!text) return <div className="p-8 dark:text-gray-100 text-center">Текст не найден</div>;
+  useLibraryFonts();
+
+  if (loading) return (
+    <div className="h-screen w-full bg-[#F2F4F7] dark:bg-[#0F172A] flex items-center justify-center text-[#8B8378] dark:text-[#8B8F97] text-sm" style={sans}>
+      {t('common_loading')}
+    </div>
+  );
+  if (!text) return (
+    <div className="h-screen w-full bg-[#F2F4F7] dark:bg-[#0F172A] flex items-center justify-center text-[#8B8378] dark:text-[#8B8F97] text-sm" style={sans}>
+      {t('reader_text_not_found')}
+    </div>
+  );
 
   return (
-    <div className="h-screen w-full bg-gray-50 dark:bg-gray-900 flex flex-col overflow-hidden">
-      <div className="flex-shrink-0 bg-gray-50 dark:bg-gray-900 p-4 md:px-8 md:pt-8 md:pb-4 border-b border-gray-200 dark:border-gray-800">
+    <div className="h-screen w-full bg-[#F2F4F7] dark:bg-[#0F172A] flex flex-col overflow-hidden transition-colors duration-300" style={sans}>
+      <div className="flex-shrink-0 bg-[#F2F4F7] dark:bg-[#0F172A] p-4 md:px-8 md:pt-8 md:pb-4 border-b border-[#EDE9E1] dark:border-[#2A3644]">
         <div className="max-w-4xl mx-auto">
-          <div className="flex justify-between items-center mb-2 flex-wrap gap-2">
-            <Link to="/" className="text-blue-600 dark:text-blue-400 hover:underline inline-block">
-              ← Назад в библиотеку
+          <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
+            <Link
+              to="/"
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-[#8B8378] dark:text-[#8B8F97] hover:text-[#3D5A80] dark:hover:text-[#8AAFD9] transition"
+            >
+              <IconArrowLeft className="w-4 h-4" /> {t('common_back_to_library')}
             </Link>
-            <div className="flex items-center gap-3">
-              <span className="text-sm dark:text-gray-300">👋 {user?.username}</span>
-              <button
-                onClick={logout}
-                className="text-sm text-red-600 dark:text-red-400 hover:underline"
-              >
-                Выйти
-              </button>
-              {/* FIX: добавлен dark:text-white для кнопки Book Mode */}
+            <div className="flex items-center gap-2">
               <button
                 onClick={handleToggleMode}
-                className="px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 transition dark:text-white"
+                className="bg-white dark:bg-[#1A2430] border border-[#DCD7CC] dark:border-[#3A4756] text-[#3D3B36] dark:text-[#D8D3C9] font-medium text-sm py-1.5 px-3.5 rounded-full hover:bg-[#F7F5F0] dark:hover:bg-[#233040] transition shadow-sm"
               >
-                {bookMode ? '📖 Study Mode' : '📚 Book Mode'}
+                {bookMode ? t('reader_mode_switch_to_study') : t('reader_mode_switch_to_book')}
               </button>
               {!bookMode && (
-                /* FIX: добавлен dark:text-white для кнопки Показать переводы */
                 <button
                   onClick={() => setShowTranslations(prev => !prev)}
-                  className="px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 transition dark:text-white"
+                  className="bg-white dark:bg-[#1A2430] border border-[#DCD7CC] dark:border-[#3A4756] text-[#3D3B36] dark:text-[#D8D3C9] font-medium text-sm py-1.5 px-3.5 rounded-full hover:bg-[#F7F5F0] dark:hover:bg-[#233040] transition shadow-sm"
                 >
-                  {showTranslations ? 'Скрыть переводы' : 'Показать переводы'}
+                  {showTranslations ? t('common_hide_translations') : t('common_show_translations')}
                 </button>
               )}
+              <LiveWordDictionary materialId={id} />
               <div className="relative" ref={dropdownRef}>
                 <button
                   onClick={() => setShowDropdown(prev => !prev)}
-                  className="px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 transition flex items-center gap-1"
+                  className="bg-white dark:bg-[#1A2430] border border-[#DCD7CC] dark:border-[#3A4756] text-[#3D3B36] dark:text-[#D8D3C9] font-medium text-sm py-1.5 px-3 rounded-full hover:bg-[#F7F5F0] dark:hover:bg-[#233040] transition flex items-center gap-1.5 shadow-sm"
                 >
-                  📑 {bookmarks.length > 0 && (
-                    <span className="text-xs bg-blue-500 text-white rounded-full w-5 h-5 flex items-center justify-center">
+                  <IconBookmark className="w-4 h-4" />
+                  {bookmarks.length > 0 && (
+                    <span className="text-[11px] font-semibold bg-[#3D5A80] text-white rounded-full w-5 h-5 flex items-center justify-center">
                       {bookmarks.length}
                     </span>
                   )}
                 </button>
                 {showDropdown && (
-                  <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 max-h-60 overflow-y-auto z-10">
+                  <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-[#1A2430] rounded-2xl shadow-xl border border-[#EDE9E1] dark:border-[#2A3644] max-h-60 overflow-y-auto z-10">
                     {bookmarks.length === 0 ? (
-                      <div className="p-3 text-gray-500 dark:text-gray-400 text-sm">Нет закладок</div>
+                      <div className="p-4 text-[#8B8378] dark:text-[#8B8F97] text-sm">{t('reader_bookmarks_empty')}</div>
                     ) : (
                       <ul>
                         {bookmarks.map((bm) => (
                           <li
                             key={bm.sentenceIndex}
                             onClick={() => goToBookmark(bm.sentenceIndex)}
-                            className="px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer border-b border-gray-100 dark:border-gray-700 last:border-0 flex items-center justify-between"
+                            className="px-4 py-2.5 hover:bg-[#F7F5F0] dark:hover:bg-[#233040] cursor-pointer border-b border-[#EDE9E1] dark:border-[#2A3644] last:border-0 flex items-center justify-between transition"
                           >
-                            <span className="text-sm truncate flex-1">
-                              {bm.text || `Предложение ${bm.sentenceIndex + 1}`}
+                            <span className="text-sm truncate flex-1 text-[#3D3B36] dark:text-[#D8D3C9]">
+                              {bm.text || t('reader_sentence_placeholder', { n: bm.sentenceIndex + 1 })}
                             </span>
                             <button
                               onClick={(e) => handleRemoveBookmark(bm.sentenceIndex, e)}
-                              className="text-gray-400 hover:text-red-500 transition-colors text-sm"
-                              title="Удалить закладку"
+                              className="text-[#B4AEA2] dark:text-[#5A6472] hover:text-[#C1666B] transition-colors ml-2 flex-shrink-0"
+                              title={t('reader_bookmark_remove_title')}
                             >
-                              🗑️
+                              <IconTrash className="w-3.5 h-3.5" />
                             </button>
                           </li>
                         ))}
@@ -469,11 +611,11 @@ export default function Reader() {
             </div>
           </div>
 
-          <h1 className="text-3xl font-bold mb-1 dark:text-white">{text.title}</h1>
-          <p className="text-gray-600 dark:text-gray-400 mb-2">Тип: {text.type}</p>
+          <h1 className="text-3xl font-bold mb-1 text-[#0F1720] dark:text-white" style={serif}>{text.title}</h1>
+          <p className="text-[#8B8378] dark:text-[#8B8F97] text-sm mb-2">{t('reader_type_label', { type: text.type })}</p>
           {!bookMode && (
-            <p className="text-gray-500 dark:text-gray-400 text-sm mb-3">
-              💡 Кликните по словам, чтобы составить фразу
+            <p className="text-[#B4AEA2] dark:text-[#5A6472] text-xs mb-3">
+              {t('reader_click_words_hint')}
             </p>
           )}
 
@@ -488,7 +630,7 @@ export default function Reader() {
                   setCurrentPage(index);
                 }
               }}
-              label={bookMode ? 'предложений' : 'страниц'}
+              label={bookMode ? t('reader_nav_label_sentences') : t('reader_nav_label_pages')}
             />
           )}
         </div>
@@ -496,14 +638,29 @@ export default function Reader() {
 
       <div className="flex-1 overflow-hidden min-h-0 p-4 md:px-8 md:pb-8">
         <div className="max-w-4xl mx-auto h-full flex flex-col">
-          <div className="bg-white dark:bg-gray-800 p-6 md:p-8 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 flex-1 flex flex-col min-h-0 relative">
-            <button
-              onClick={handleToggleBookmark}
-              className="absolute top-3 right-4 text-2xl text-gray-400 hover:text-yellow-500 transition-colors z-10"
-              title={hasBookmark ? 'Удалить закладку' : 'Добавить закладку'}
-            >
-              {hasBookmark ? '⭐' : '☆'}
-            </button>
+          <div className="bg-white dark:bg-[#1A2430] p-6 md:p-8 rounded-2xl border border-[#EDE9E1] dark:border-[#2A3644] shadow-[0_1px_2px_rgba(15,23,32,0.06)] dark:shadow-[0_1px_2px_rgba(0,0,0,0.4)] flex-1 flex flex-col min-h-0 relative">
+            {!showCompletionView && (
+              <button
+                onClick={handleToggleBookmark}
+                className="absolute top-3 right-4 z-10 p-1.5 rounded-lg text-[#B4AEA2] dark:text-[#5A6472] hover:text-[#E9C46A] hover:bg-[#F7F5F0] dark:hover:bg-[#233040] transition-colors"
+                title={hasBookmark ? t('reader_bookmark_remove_title') : t('reader_bookmark_add_title')}
+              >
+                <IconBookmark className="w-5 h-5" filled={hasBookmark} />
+              </button>
+            )}
+
+            {/* Spec 2 (доп., п.6.3): Review-страница не точка невозврата —
+                можно вручную вернуться к тексту (кнопка "← Назад" внутри
+                MaterialCompletionView, та же, что и для листания страниц)
+                и обратно к словам. */}
+            {isAtEnd && !viewingCompletion && (
+              <button
+                onClick={() => setViewingCompletion(true)}
+                className="absolute top-3 left-4 z-10 inline-flex items-center gap-1 text-xs font-medium text-[#8B8378] dark:text-[#8B8F97] hover:text-[#3D5A80] dark:hover:text-[#8AAFD9] transition"
+              >
+                {t('reader_to_words')}
+              </button>
+            )}
 
             <div ref={containerRef} className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
               <div
@@ -515,7 +672,18 @@ export default function Reader() {
                 {renderShadowContent()}
               </div>
 
-              {bookMode ? (
+              {showCompletionView ? (
+                <MaterialCompletionView
+                  materialId={id}
+                  materialStatus={materialStatus}
+                  justCompleted={justTransitioned && !celebrationConsumed}
+                  reviewMode={reviewMode}
+                  sessionStartWords={sessionStartWordsRef.current}
+                  onStatusChange={setMaterialStatus}
+                  onCelebrationDone={() => setCelebrationConsumed(true)}
+                  onBack={() => setViewingCompletion(false)}
+                />
+              ) : bookMode ? (
                 <BookMode text={text} renderWords={renderWords} />
               ) : (
                 <StudyMode
@@ -540,7 +708,7 @@ export default function Reader() {
       </div>
 
       {wordPanel.selectedWord && (
-        <div className="fixed top-20 right-5 z-50 w-96 max-h-[90vh] overflow-y-auto shadow-2xl rounded-lg">
+        <div className="fixed top-20 right-5 z-50 w-96 max-h-[90vh] overflow-y-auto shadow-2xl rounded-2xl border border-[#EDE9E1] dark:border-[#2A3644]">
           <WordPanel
             canonicalWord={wordPanel.canonicalWord}
             wordTranslation={wordPanel.wordTranslation}
@@ -553,6 +721,9 @@ export default function Reader() {
             showContext={wordPanel.showContext}
             selectedToken={wordPanel.selectedToken}
             hasReflexive={wordPanel.hasReflexive}
+            isSkipped={wordPanel.isWordSkipped(wordPanel.canonicalWord)}
+            isSaved={!!wordStatusMap.get(normalizeWord(wordPanel.canonicalWord)) || wordPanel.isWordSkipped(wordPanel.canonicalWord)}
+            onToggleSkip={() => wordPanel.toggleSkipWord(wordPanel.canonicalWord)}
             onCanonicalChange={(val) => {
               wordPanel.setCanonicalWord(val);
               wordPanel.setIsManualEdit(true);

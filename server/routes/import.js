@@ -8,12 +8,51 @@ const authenticateToken = require('../middleware/auth');
 const { clearTextCache } = require('./texts');
 
 // ==============================
+// Извлечение YouTube video ID и построение ссылки на thumbnail.
+// Поддерживает основные форматы:
+//   https://www.youtube.com/watch?v=VIDEO_ID
+//   https://youtu.be/VIDEO_ID
+//   https://www.youtube.com/embed/VIDEO_ID
+//   https://www.youtube.com/shorts/VIDEO_ID
+// Не требует API-ключа — YouTube отдаёт превью по прямому URL.
+// ==============================
+function extractYouTubeVideoId(url) {
+  if (!url) return null;
+  const patterns = [
+    /youtu\.be\/([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/embed\/([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/,
+  ];
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+function getYouTubeThumbnail(url) {
+  const videoId = extractYouTubeVideoId(url);
+  if (!videoId) return null;
+  // hqdefault всегда существует для любого публичного видео.
+  // maxresdefault не всегда доступен (зависит от того, загружал ли автор
+  // видео в высоком разрешении), поэтому hqdefault надёжнее по умолчанию.
+  return `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+}
+
+// Spec 2 (доп., п.9): язык изучения материала — мультиязычная библиотека.
+const SUPPORTED_MATERIAL_LANGUAGES = new Set(['de', 'ru', 'en', 'es', 'fr', 'pt']);
+function resolveMaterialLanguage(language) {
+  return SUPPORTED_MATERIAL_LANGUAGES.has(language) ? language : 'de';
+}
+
+// ==============================
 // ИМПОРТ ТЕКСТА
 // ==============================
 router.post('/import/text', authenticateToken, async (req, res) => {
   const startTime = Date.now();
   console.log('=== IMPORT TEXT START ===');
-  const { title, content, icon, author, status } = req.body;
+  const { title, content, icon, author, status, language } = req.body;
   const userId = req.user.id;
 
   if (!title || !content) {
@@ -29,7 +68,8 @@ router.post('/import/text', authenticateToken, async (req, res) => {
         icon: icon || '/icons/default.png',
         userId,
         author: author || null,
-        status: status || 'new'
+        status: status || 'new',
+        language: resolveMaterialLanguage(language)
       }
     });
     console.log(`✓ Text imported in ${Date.now() - startTime} ms`);
@@ -40,7 +80,8 @@ router.post('/import/text', authenticateToken, async (req, res) => {
       type: material.type,
       imported_at: material.importedAt,
       author: material.author,
-      status: material.status
+      status: material.status,
+      language: material.language
     });
   } catch (err) {
     console.error('Text import error:', err);
@@ -56,11 +97,19 @@ router.post('/import/youtube', authenticateToken, async (req, res) => {
   console.log('\n=== IMPORT YOUTUBE START ===');
   console.log('URL received:', req.body.youtube_url);
 
-  const { youtube_url, title: customTitle, icon, author: customAuthor, status } = req.body;
+  const { youtube_url, title: customTitle, icon, author: customAuthor, status, language } = req.body;
+  const materialLanguage = resolveMaterialLanguage(language);
   const userId = req.user.id;
 
   if (!youtube_url) {
     return res.status(400).json({ error: 'YouTube URL required' });
+  }
+
+  const thumbnail = getYouTubeThumbnail(youtube_url);
+  if (thumbnail) {
+    console.log(`🖼️  Thumbnail resolved: ${thumbnail}`);
+  } else {
+    console.warn('⚠️ Could not extract video ID from URL, no thumbnail will be saved');
   }
 
   // Получаем информацию о видео (автор, название и т.д.)
@@ -83,14 +132,20 @@ router.post('/import/youtube', authenticateToken, async (req, res) => {
   console.log('Temporary download directory:', downloadDir);
   fs.mkdirSync(downloadDir, { recursive: true });
 
+  // ВАЖНО: YouTube теперь иногда отдаёт языковой код субтитров с суффиксом
+  // track-ID (например "de-KiF8PLhXDeA" вместо просто "de") — обычно на
+  // видео с несколькими дорожками субтитров. Точный код "de" в --sub-langs
+  // такой трек не матчит, и yt-dlp репортит "no subtitles for the requested
+  // languages", хотя субтитры реально есть. Используем glob "de.*" и т.п.,
+  // чтобы матчить и точный код, и код с суффиксом.
   const commands = [
     {
       name: 'manual subs',
-      cmd: `yt-dlp --write-subs --skip-download --sub-langs "de,en,ru" -o "%(title)s" "${youtube_url}"`
+      cmd: `yt-dlp --write-subs --skip-download --sub-langs "de.*,en.*,ru.*" -o "%(title)s" "${youtube_url}"`
     },
     {
       name: 'auto subs',
-      cmd: `yt-dlp --write-auto-subs --skip-download --sub-langs "de,en,ru" -o "%(title)s" "${youtube_url}"`
+      cmd: `yt-dlp --write-auto-subs --skip-download --sub-langs "de.*,en.*,ru.*" -o "%(title)s" "${youtube_url}"`
     }
   ];
 
@@ -223,9 +278,11 @@ router.post('/import/youtube', authenticateToken, async (req, res) => {
           type: 'video',
           youtubeUrl: youtube_url,
           icon: icon || '/icons/default.png',
+          thumbnail: thumbnail,
           userId,
           author: finalAuthor,
           status: status || 'new',
+          language: materialLanguage,
           subtitles: {
             create: subtitles.map((sub, i) => ({
               startMs: sub.start_ms,
@@ -246,9 +303,11 @@ router.post('/import/youtube', authenticateToken, async (req, res) => {
           title: videoTitle,
           type: 'video',
           youtube_url,
+          thumbnail: material.thumbnail,
           subtitle_count: subtitles.length,
           author: material.author,
           status: material.status,
+          language: material.language,
           subtitles: subtitles.map(s => ({
             start: s.start_ms,
             end: s.end_ms,

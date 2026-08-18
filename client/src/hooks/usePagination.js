@@ -61,13 +61,22 @@ export function usePagination({
     const maxH = wrapper.clientHeight;
     if (maxH < 50) { setIsCalculating(false); return; }
 
+    // Небольшой запас на случай, если реальная высота строки после рендера
+    // (curPage-контент) окажется чуть больше измеренной в shadow-элементе —
+    // например, из-за font boosting на мобильных браузерах, sub-pixel
+    // округления offsetHeight или смены масштаба страницы. Без запаса
+    // последняя строка страницы может быть обрезана контейнером с
+    // overflow-hidden.
+    const SAFETY_MARGIN = 12;
+    const fitH = maxH - SAFETY_MARGIN;
+
     const pages = [0];
     const baseTop = items[0].offsetTop;
     let pageTopOffset = baseTop;
 
     for (let i = 1; i < items.length; i++) {
       const itemBottom = items[i].offsetTop + items[i].offsetHeight - pageTopOffset;
-      if (itemBottom > maxH) {
+      if (itemBottom > fitH) {
         pages.push(i);
         pageTopOffset = items[i].offsetTop;
       }

@@ -4,8 +4,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import IconPicker from './IconPicker';
 import { PRESET_ICONS } from '../constants';
 import JSZip from 'jszip';
+import { sans, IconClose } from '../design/designSystem';
+import { useI18n } from '../context/I18nContext';
 
 export default function TextImportModal({ isOpen, onClose, onSubmit, loading }) {
+  const { t } = useI18n();
   const [title, setTitle] = useState('');
   const [textContent, setTextContent] = useState('');
   const [selectedIcon, setSelectedIcon] = useState(PRESET_ICONS[0]);
@@ -14,6 +17,7 @@ export default function TextImportModal({ isOpen, onClose, onSubmit, loading }) 
   const [isProcessing, setIsProcessing] = useState(false);
   const [author, setAuthor] = useState('');
   const [status, setStatus] = useState('new');
+  const [selectedFileName, setSelectedFileName] = useState('');
 
   useEffect(() => {
     if (!isOpen) {
@@ -24,6 +28,7 @@ export default function TextImportModal({ isOpen, onClose, onSubmit, loading }) 
       setIsProcessing(false);
       setAuthor('');
       setStatus('new');
+      setSelectedFileName('');
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   }, [isOpen]);
@@ -35,7 +40,7 @@ export default function TextImportModal({ isOpen, onClose, onSubmit, loading }) 
       setIsProcessing(false);
     };
     reader.onerror = () => {
-      alert('Не удалось прочитать файл');
+      alert(t('import_text_error_read_file'));
       setIsProcessing(false);
     };
     reader.readAsText(file, 'UTF-8');
@@ -48,7 +53,7 @@ export default function TextImportModal({ isOpen, onClose, onSubmit, loading }) 
       try {
         const arrayBuffer = event.target.result;
         const zip = await JSZip.loadAsync(arrayBuffer);
-        
+
         const htmlFiles = [];
         zip.forEach((relativePath, zipEntry) => {
           if (!zipEntry.dir) {
@@ -67,7 +72,7 @@ export default function TextImportModal({ isOpen, onClose, onSubmit, loading }) 
             }
           });
           if (textFiles.length === 0) {
-            throw new Error('Не найдено ни одного HTML или текстового файла в EPUB');
+            throw new Error(t('import_text_error_no_html_in_epub'));
           }
           let fullText = '';
           for (const filePath of textFiles) {
@@ -79,7 +84,7 @@ export default function TextImportModal({ isOpen, onClose, onSubmit, loading }) 
             }
           }
           if (!fullText.trim()) {
-            throw new Error('Не удалось извлечь текст из файлов');
+            throw new Error(t('import_text_error_extract_files'));
           }
           setTextContent(fullText.trim());
           setIsProcessing(false);
@@ -102,19 +107,19 @@ export default function TextImportModal({ isOpen, onClose, onSubmit, loading }) 
         }
 
         if (!fullText.trim()) {
-          throw new Error('Не удалось извлечь текст из EPUB');
+          throw new Error(t('import_text_error_extract_epub'));
         }
 
         setTextContent(fullText.trim());
         setIsProcessing(false);
       } catch (err) {
         console.error('Ошибка парсинга EPUB:', err);
-        alert(`Не удалось распарсить EPUB-файл: ${err.message}`);
+        alert(t('import_text_error_parse_epub', { message: err.message }));
         setIsProcessing(false);
       }
     };
     reader.onerror = () => {
-      alert('Не удалось прочитать файл');
+      alert(t('import_text_error_read_file'));
       setIsProcessing(false);
     };
     reader.readAsArrayBuffer(file);
@@ -126,7 +131,7 @@ export default function TextImportModal({ isOpen, onClose, onSubmit, loading }) 
 
     const ext = file.name.split('.').pop().toLowerCase();
     if (ext !== 'txt' && ext !== 'epub') {
-      alert('Пожалуйста, выберите файл с расширением .txt или .epub');
+      alert(t('import_text_error_invalid_ext'));
       e.target.value = '';
       return;
     }
@@ -135,6 +140,7 @@ export default function TextImportModal({ isOpen, onClose, onSubmit, loading }) 
     if (!title.trim()) {
       setTitle(baseName);
     }
+    setSelectedFileName(file.name);
 
     if (ext === 'txt') {
       handleTxtFile(file);
@@ -149,7 +155,7 @@ export default function TextImportModal({ isOpen, onClose, onSubmit, loading }) 
     e.preventDefault();
     const icon = customIcon || selectedIcon || PRESET_ICONS[0];
     if (!title || !textContent) {
-      alert('Заполните все поля');
+      alert(t('import_text_error_missing_fields'));
       return;
     }
     onSubmit({
@@ -164,89 +170,89 @@ export default function TextImportModal({ isOpen, onClose, onSubmit, loading }) 
 
   if (!isOpen) return null;
 
+  const inputClass = 'w-full px-3.5 py-2.5 border border-[#CBD5E1] dark:border-[#35465C] rounded-xl bg-white dark:bg-[#0B1220] text-[#0F172A] dark:text-white text-sm placeholder:text-[#94A3B8] dark:placeholder:text-[#64748B] focus:outline-none focus:ring-2 focus:ring-[#1560E8] focus:border-transparent transition';
+  const labelClass = 'block text-sm font-medium text-[#334155] dark:text-[#CBD5E1] mb-1.5';
+
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.9 }}
-          transition={{ duration: 0.2 }}
-          className="bg-white dark:bg-gray-800 rounded-2xl max-w-md w-full"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 12 }}
+          transition={{ duration: 0.18, ease: 'easeOut' }}
+          className="bg-white dark:bg-[#16202E] rounded-2xl max-w-md w-full shadow-2xl max-h-[90vh] overflow-y-auto"
+          style={sans}
         >
-          <div className="flex justify-between p-4 border-b dark:border-gray-700">
-            <h2 className="text-xl font-bold dark:text-white">Импорт текста</h2>
-            <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
-              ✕
+          <div className="flex justify-between items-center p-5 border-b border-[#E2E8F0] dark:border-[#263447]">
+            <h2 className="text-lg font-semibold text-[#0F172A] dark:text-white">{t('import_text_title')}</h2>
+            <button onClick={onClose} className="text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-white transition p-1">
+              <IconClose className="w-4 h-4" />
             </button>
           </div>
-          <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          <form onSubmit={handleSubmit} className="p-5 space-y-4">
             <input
               type="text"
-              placeholder="Название"
+              placeholder={t('import_text_title_placeholder')}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              className={inputClass}
               required
             />
-            
+
             <input
               type="text"
-              placeholder="Автор (необязательно)"
+              placeholder={t('import_text_author_placeholder')}
               value={author}
               onChange={(e) => setAuthor(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              className={inputClass}
             />
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Статус
-              </label>
+              <label className={labelClass}>{t('import_text_status_label')}</label>
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                className={inputClass}
               >
-                <option value="new">Новое</option>
-                <option value="learning">Изучается</option>
-                <option value="completed">Пройдено</option>
+                <option value="new">{t('import_text_status_new')}</option>
+                <option value="completed">{t('import_text_status_completed')}</option>
               </select>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Загрузите .txt или .epub файл
-              </label>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".txt,.epub"
-                onChange={handleFileUpload}
-                className="block w-full text-sm text-gray-500 dark:text-gray-400
-                  file:mr-4 file:py-2 file:px-4
-                  file:rounded-full file:border-0
-                  file:text-sm file:font-semibold
-                  file:bg-blue-50 file:text-blue-700
-                  dark:file:bg-blue-900 dark:file:text-blue-200
-                  hover:file:bg-blue-100 dark:hover:file:bg-blue-800
-                  cursor-pointer"
-              />
+              <label className={labelClass}>{t('import_text_file_label')}</label>
+              <div className="flex items-center gap-3">
+                <label className="flex-shrink-0 py-2 px-4 rounded-full text-sm font-semibold bg-[#1560E8] text-white hover:bg-[#114FC4] cursor-pointer transition">
+                  {t('import_text_file_choose')}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".txt,.epub"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                </label>
+                <span className="text-sm text-[#64748B] dark:text-[#94A3B8] truncate">
+                  {selectedFileName || t('import_text_file_none')}
+                </span>
+              </div>
               {isProcessing && (
-                <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">
-                  ⏳ Обработка файла...
+                <p className="text-sm text-[#1560E8] dark:text-[#5B9CFF] mt-1.5">
+                  {t('import_text_file_processing')}
                 </p>
               )}
             </div>
 
             <textarea
-              placeholder="Или введите текст вручную"
+              placeholder={t('import_text_content_placeholder')}
               rows={6}
               value={textContent}
               onChange={(e) => setTextContent(e.target.value)}
-              className="w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              className={`${inputClass} resize-none`}
               required={!textContent}
             />
-            
+
             <IconPicker
               selectedIcon={selectedIcon}
               customIcon={customIcon}
@@ -260,11 +266,19 @@ export default function TextImportModal({ isOpen, onClose, onSubmit, loading }) 
               }}
             />
             <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={onClose} className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-full dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
-                Отмена
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 border border-[#CBD5E1] dark:border-[#35465C] rounded-full text-[#334155] dark:text-[#CBD5E1] text-sm font-medium hover:bg-[#F8FAFC] dark:hover:bg-[#1E2A3B] transition"
+              >
+                {t('import_text_cancel')}
               </button>
-              <button type="submit" disabled={loading || isProcessing} className="px-4 py-2 bg-blue-500 text-white rounded-full hover:bg-blue-600 disabled:opacity-50">
-                {loading ? 'Импорт...' : 'Импорт'}
+              <button
+                type="submit"
+                disabled={loading || isProcessing}
+                className="px-4 py-2 bg-[#1560E8] text-white rounded-full text-sm font-medium hover:bg-[#114FC4] transition disabled:opacity-50"
+              >
+                {loading ? t('import_text_submitting') : t('import_text_submit')}
               </button>
             </div>
           </form>

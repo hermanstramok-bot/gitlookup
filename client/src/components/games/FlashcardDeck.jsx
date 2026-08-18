@@ -1,5 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useSpeech } from '../../hooks/useSpeech';
+
+const DEFAULT_LANG = 'de';
+function getTargetLang() {
+  return localStorage.getItem('targetLang') || DEFAULT_LANG;
+}
 
 // ===== Модалка подтверждения =====
 function ConfirmModal({ isOpen, onClose, onConfirm }) {
@@ -87,14 +93,12 @@ export default function FlashcardDeck({ words, onFinish }) {
     setIsFlipped(prev => !prev);
   };
 
-  // Озвучивание
+  // Озвучивание — тот же голос (язык + пол из настроек), что и в
+  // Reader/VideoReader/WordPanel (см. useSpeech.js), а не захардкоженный
+  // en-US.
+  const { speak } = useSpeech();
   const speakWord = (word) => {
-    if (!window.speechSynthesis) return;
-    const utterance = new SpeechSynthesisUtterance(word);
-    utterance.lang = 'en-US';
-    utterance.rate = 0.9;
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(utterance);
+    speak({ original: word }, 'flashcard-front', getTargetLang());
   };
 
   // Выход

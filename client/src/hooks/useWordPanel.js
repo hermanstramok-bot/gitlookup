@@ -1,5 +1,6 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { apiFetch } from '../utils/api'; // <-- добавлен импорт
+import { normalizeWord } from '../utils/normalizeWord';
 
 const cleanWord = (word) => {
   if (!word) return '';
@@ -48,20 +49,65 @@ export function useWordPanel(materialId, savedWords, setSavedWords, targetLang =
     setIsManualEdit(false);
   }, []);
 
+  // Spec 1: слова, пропущенные ("skip / unhighlight") именно в этом материале.
+  // Хранится как Set нормализованных слов — та же нормализация, что и в
+  // wordStatusMap (useWords.js), чтобы совпадали 1-в-1.
+  const [skippedWords, setSkippedWords] = useState(new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!materialId) return;
+    apiFetch(`/api/materials/${materialId}/skipped-words`)
+      .then(words => {
+        if (!cancelled) setSkippedWords(new Set(words));
+      })
+      .catch(err => console.error('Ошибка загрузки пропущенных слов:', err));
+    return () => { cancelled = true; };
+  }, [materialId]);
+
+  const isWordSkipped = useCallback((word) => {
+    return skippedWords.has(normalizeWord(word));
+  }, [skippedWords]);
+
+  // Тоггл: скипнуть слово в этом материале, или отменить скип, если уже скипнуто.
+  const toggleSkipWord = useCallback(async (word) => {
+    if (!word) return;
+    const normalized = normalizeWord(word);
+    const currentlySkipped = skippedWords.has(normalized);
+    try {
+      if (currentlySkipped) {
+        await apiFetch(`/api/materials/${materialId}/skipped-words/${encodeURIComponent(normalized)}`, {
+          method: 'DELETE'
+        });
+        setSkippedWords(prev => {
+          const next = new Set(prev);
+          next.delete(normalized);
+          return next;
+        });
+      } else {
+        await apiFetch(`/api/materials/${materialId}/skipped-words`, {
+          method: 'POST',
+          body: JSON.stringify({ word: normalized })
+        });
+        setSkippedWords(prev => new Set(prev).add(normalized));
+      }
+      closePanel();
+    } catch (err) {
+      console.error('Ошибка изменения статуса пропуска слова:', err);
+      alert('Не удалось изменить статус пропуска слова');
+    }
+  }, [materialId, skippedWords, closePanel]);
+
   // Фолбэк на Google Translate
   const translateViaGoogle = useCallback(async (phrase) => {
-    console.log('🔄 translateViaGoogle called with phrase:', phrase);
     try {
       const res = await fetch('/api/translate-sentence', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sentence: phrase, targetLang })
       });
-      console.log('📡 Response status:', res.status);
       const data = await res.json();
-      console.log('✅ translateViaGoogle response:', data);
       const result = data.translation || '';
-      console.log('📝 Setting wordTranslation to:', result);
       setWordTranslation(result);
       setManualTranslation(result);
     } catch (err) {
@@ -70,9 +116,7 @@ export function useWordPanel(materialId, savedWords, setSavedWords, targetLang =
   }, [targetLang]);
 
   const translatePhrase = useCallback(async (phrase) => {
-    console.log('🔄 translatePhrase called with phrase:', phrase);
     if (!phrase) {
-      console.log('⚠️ phrase is empty, skipping');
       return;
     }
     setTranslatingWord(true);
@@ -80,10 +124,8 @@ export function useWordPanel(materialId, savedWords, setSavedWords, targetLang =
       // Локальный словарь (server/data/de_rus_dict.json) есть только для
       // немецкого. Для остальных языков сразу используем Google Translate.
       if (phrase.includes(' ') || targetLang !== 'de') {
-        console.log('🔍 Phrase or non-German target, using Google Translate');
         await translateViaGoogle(phrase);
       } else {
-        console.log('🔍 Single German word, trying dictionary first');
         const res = await fetch('/api/dictionary-lookup', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -91,13 +133,10 @@ export function useWordPanel(materialId, savedWords, setSavedWords, targetLang =
         });
         const data = await res.json();
         const validTranslations = (data.translations || []).filter(isValidTranslation);
-        console.log('📚 Dictionary response:', data, 'validTranslations:', validTranslations);
 
         if (validTranslations.length > 0) {
-          console.log('✅ Dictionary returned translations, setting translationsList');
           setTranslationsList(validTranslations);
         } else {
-          console.log('⚠️ Dictionary empty, falling back to Google Translate');
           await translateViaGoogle(phrase);
         }
       }
@@ -150,7 +189,6 @@ export function useWordPanel(materialId, savedWords, setSavedWords, targetLang =
     indices,
     phrase
   }) => {
-    console.log('🔓 openPanel called with:', { word, sentenceIndex, sentence, phrase, reflexive });
     setSelectedIndices(indices);
     setHighlightedIndices(indices);
     setSelectedToken(token);
@@ -169,15 +207,8 @@ export function useWordPanel(materialId, savedWords, setSavedWords, targetLang =
     setIsManualEdit(false);
 
     // Явно вызываем перевод
-    console.log('🔔 Calling translatePhrase with phrase:', phrase);
     translatePhrase(phrase);
   }, [translatePhrase]);
-  console.log("📤 useWordPanel returns:", {
-    canonicalWord,
-    wordTranslation,
-    translationsList,
-    translatingWord,
-});
 
   return {
     selectedWord,
@@ -217,5 +248,9 @@ export function useWordPanel(materialId, savedWords, setSavedWords, targetLang =
     openPanel,
     translatePhrase,
     handleSaveWord,
+    // Spec 1: per-material word skip / unhighlight
+    skippedWords,
+    isWordSkipped,
+    toggleSkipWord,
   };
 }

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useI18n } from '../context/I18nContext';
 
 export default function StudyMode({
   text,
@@ -15,13 +16,14 @@ export default function StudyMode({
   setCurrentPage,
   isCalculating,
 }) {
+  const { t } = useI18n();
   const currentSentences = text.sentences.slice(startIndex, endIndex);
 
   if (isCalculating) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <div className="animate-pulse text-gray-400 dark:text-gray-500">
-          Подготовка страниц...
+          {t('study_mode_calculating')}
         </div>
       </div>
     );
@@ -47,7 +49,7 @@ export default function StudyMode({
                   <p className="text-[20px]">{renderWords(sentence, globalIdx)}</p>
                   {showTranslations && (
                     <div className="text-sm text-gray-500 dark:text-gray-400 mt-1 min-h-[1.5rem]">
-                      {translations[sentence.id] || 'Перевод загружается...'}
+                      {translations[sentence.id] || t('study_mode_translation_loading')}
                     </div>
                   )}
                 </div>
@@ -56,7 +58,7 @@ export default function StudyMode({
           );
         })}
         {currentSentences.length === 0 && (
-          <p className="text-gray-400 text-center">Нет предложений на этой странице</p>
+          <p className="text-gray-400 text-center">{t('study_mode_no_sentences')}</p>
         )}
       </div>
 
@@ -71,7 +73,7 @@ export default function StudyMode({
                 : 'bg-blue-500 text-white hover:bg-blue-600'
             }`}
           >
-            ← Назад
+            {t('common_prev_page')}
           </button>
           <span className="text-gray-700 dark:text-gray-300 font-medium">
             {currentPage + 1} / {totalPages}
@@ -85,7 +87,7 @@ export default function StudyMode({
                 : 'bg-blue-500 text-white hover:bg-blue-600'
             }`}
           >
-            Вперед →
+            {t('common_next_page')}
           </button>
         </div>
       )}

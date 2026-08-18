@@ -2,23 +2,22 @@ import { Link, useLocation } from 'react-router-dom';
 import { useRef, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ThemeToggle from './ThemeToggle';
+import { useI18n } from '../context/I18nContext';
+import { sans, serif, useLibraryFonts, IconSettings, IconMenu, IconClose } from '../design/designSystem';
 
 // Иконки изучаемых языков (лежат в /public/icons/lang/).
-// ВНИМАНИЕ: имена файлов взяты как есть с диска, включая опечатку в
-// spanich_circle.png и отсутствие "_circle" в portuguese.png — если
-// переименуете файлы, поправьте пути здесь.
-// english_circle.png в текущем дереве проекта НЕ НАЙДЕН — нужно добавить
-// файл с таким именем в /public/icons/lang/, иначе иконка английского будет битой.
 const LANG_ICONS = {
   de: { src: '/icons/lang/german_circle.png', title: 'Изучаемый язык: немецкий' },
   en: { src: '/icons/lang/english_circle.png', title: 'Изучаемый язык: английский' },
-  es: { src: '/icons/lang/spanich_circle.png', title: 'Изучаемый язык: испанский' },
+  es: { src: '/icons/lang/spanish_circle.png', title: 'Изучаемый язык: испанский' },
   fr: { src: '/icons/lang/french_circle.png', title: 'Изучаемый язык: французский' },
-  pt: { src: '/icons/lang/portuguese.png', title: 'Изучаемый язык: португальский' },
+  pt: { src: '/icons/lang/portuguese_circle.png', title: 'Изучаемый язык: португальский' },
 };
 const DEFAULT_LANG = 'de';
 
 export default function Header() {
+  useLibraryFonts();
+  const { t } = useI18n();
   const location = useLocation();
   const isActive = (path) => location.pathname === path;
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -102,7 +101,7 @@ export default function Header() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="fixed inset-0 bg-black bg-opacity-50 z-40"
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40"
             onClick={() => setIsMenuOpen(false)}
           />
           {/* Само меню */}
@@ -111,52 +110,53 @@ export default function Header() {
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="fixed top-0 right-0 bottom-0 w-64 bg-blue-900 dark:bg-gray-800 z-50 shadow-xl p-6 flex flex-col gap-6"
+            className="fixed top-0 right-0 bottom-0 w-64 bg-[#1560E8] dark:bg-[#0F172A] z-50 shadow-2xl p-6 flex flex-col gap-6"
+            style={sans}
           >
             <div className="flex justify-end">
               <button
                 onClick={() => setIsMenuOpen(false)}
-                className="text-white text-2xl focus:outline-none"
+                className="text-white/70 hover:text-white transition focus:outline-none p-1"
               >
-                ✕
+                <IconClose className="w-5 h-5" />
               </button>
             </div>
             <nav className="flex flex-col gap-4 text-white">
               <Link
                 to="/"
-                className={`text-lg font-medium transition-colors hover:text-blue-200 ${
-                  isActive('/') ? 'text-blue-200 border-l-4 border-blue-200 pl-2' : ''
+                className={`text-lg font-medium transition-colors hover:text-white/80 ${
+                  isActive('/') ? 'text-white border-l-4 border-white pl-2' : ''
                 }`}
               >
-                Библиотека
+                {t('nav_library')}
               </Link>
               <Link
                 to="/vocab"
-                className={`text-lg font-medium transition-colors hover:text-blue-200 ${
-                  isActive('/vocab') ? 'text-blue-200 border-l-4 border-blue-200 pl-2' : ''
+                className={`text-lg font-medium transition-colors hover:text-white/80 ${
+                  isActive('/vocab') ? 'text-white border-l-4 border-white pl-2' : ''
                 }`}
               >
-                Словарь
+                {t('nav_vocab')}
               </Link>
               <Link
                 to="/trainer"
-                className={`text-lg font-medium transition-colors hover:text-blue-200 ${
-                  isActive('/trainer') ? 'text-blue-200 border-l-4 border-blue-200 pl-2' : ''
+                className={`text-lg font-medium transition-colors hover:text-white/80 ${
+                  isActive('/trainer') ? 'text-white border-l-4 border-white pl-2' : ''
                 }`}
               >
-                Тренажёр
+                {t('nav_trainer')}
               </Link>
               <Link
                 to="/settings"
-                className={`text-lg font-medium transition-colors hover:text-blue-200 ${
-                  isActive('/settings') ? 'text-blue-200 border-l-4 border-blue-200 pl-2' : ''
+                className={`inline-flex items-center gap-2 text-lg font-medium transition-colors hover:text-white/80 ${
+                  isActive('/settings') ? 'text-white border-l-4 border-white pl-2' : ''
                 }`}
               >
-                ⚙️ Настройки
+                <IconSettings className="w-4 h-4" /> {t('nav_settings')}
               </Link>
               <div className="flex items-center gap-2 text-white text-sm">
                 <img src={langIcon.src} alt={langIcon.title} className="h-5 w-5" title={langIcon.title} />
-                <span className="opacity-80">{langIcon.title.replace('Изучаемый язык: ', '')}</span>
+                <span className="opacity-70">{langIcon.title.replace('Изучаемый язык: ', '')}</span>
               </div>
               <div className="pt-4 mt-auto">
                 <ThemeToggle />
@@ -169,13 +169,13 @@ export default function Header() {
   );
 
   return (
-    <header className="bg-blue-900 dark:bg-gray-900 text-white shadow-lg sticky top-0 z-10 transition-colors duration-300">
+    <header className="bg-[#1560E8] dark:bg-[#0F172A] text-white shadow-lg dark:border-b dark:border-[#263447] sticky top-0 z-10 transition-colors duration-300" style={sans}>
       <div className="w-full px-4 sm:px-6">
         <div className="flex justify-between items-center h-16">
           {/* Логотип */}
           <Link to="/" className="flex items-center gap-2 hover:opacity-90 transition">
             <img src="/icons/doggy.png" alt="Doggy" className="h-7 w-auto" />
-            <span className="font-bold text-lg">LeseLearn</span>
+            <span className="font-bold text-lg" style={serif}>LeseLearn</span>
           </Link>
 
           {/* Десктопная навигация */}
@@ -183,23 +183,23 @@ export default function Header() {
             <Link
               ref={libraryRef}
               to="/"
-              className="text-sm font-medium text-white transition-colors hover:text-blue-200 dark:hover:text-gray-300"
+              className="text-sm font-medium text-white/85 transition-colors hover:text-white"
             >
-              Библиотека
+              {t('nav_library')}
             </Link>
             <Link
               ref={vocabRef}
               to="/vocab"
-              className="text-sm font-medium text-white transition-colors hover:text-blue-200 dark:hover:text-gray-300"
+              className="text-sm font-medium text-white/85 transition-colors hover:text-white"
             >
-              Словарь
+              {t('nav_vocab')}
             </Link>
             <Link
               ref={trainerRef}
               to="/trainer"
-              className="text-sm font-medium text-white transition-colors hover:text-blue-200 dark:hover:text-gray-300"
+              className="text-sm font-medium text-white/85 transition-colors hover:text-white"
             >
-              Тренажёр
+              {t('nav_trainer')}
             </Link>
 
             {/* Флаг изучаемого языка между Словарём и Настройками */}
@@ -212,13 +212,10 @@ export default function Header() {
 
             <Link
               to="/settings"
-              className="text-sm font-medium text-white transition-colors hover:text-blue-200 dark:hover:text-gray-300 p-1"
-              title="Настройки"
+              className="text-white/85 transition-colors hover:text-white p-1"
+              title={t('nav_settings')}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
+              <IconSettings className="h-5 w-5" />
             </Link>
 
             <div className="ml-2">
@@ -238,11 +235,9 @@ export default function Header() {
           {/* Мобильная кнопка-бургер */}
           <button
             onClick={() => setIsMenuOpen(true)}
-            className="md:hidden flex flex-col justify-center items-center w-8 h-8 gap-1 text-white focus:outline-none"
+            className="md:hidden flex items-center justify-center w-8 h-8 text-white/85 hover:text-white transition focus:outline-none"
           >
-            <span className="block w-5 h-0.5 bg-white rounded"></span>
-            <span className="block w-5 h-0.5 bg-white rounded"></span>
-            <span className="block w-5 h-0.5 bg-white rounded"></span>
+            <IconMenu className="w-5 h-5" />
           </button>
         </div>
       </div>

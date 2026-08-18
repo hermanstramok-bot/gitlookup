@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { I18nProvider } from './context/I18nContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout'; // импортируем Layout
 import Login from './pages/Login';
@@ -13,6 +14,7 @@ import Settings from './pages/Settings';
 
 function App() {
   return (
+    <I18nProvider>
     <AuthProvider>
       <BrowserRouter>
         <Routes>
@@ -82,6 +84,7 @@ function App() {
         </Routes>
       </BrowserRouter>
     </AuthProvider>
+    </I18nProvider>
   );
 }
 

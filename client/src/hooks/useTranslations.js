@@ -29,14 +29,14 @@ async function throttlePromises(promises, limit = 5) {
   return results;
 }
 
-export function useTranslations(visibleSentences, materialId, targetLang = 'de') {
+export function useTranslations(visibleSentences, materialId, targetLang = 'de', translationLang = 'ru') {
   const [translations, setTranslations] = useState({});
   const translationCache = useRef(new Map());
   const pendingSet = useRef(new Set());
   const abortControllerRef = useRef(null);
-  // Кэш и pending-множество завязаны на язык: при смене targetLang старые
-  // переводы (на другом языке) не должны попадать в выдачу как валидные.
-  const cacheLangRef = useRef(targetLang);
+  // Кэш и pending-множество завязаны на пару языков: при смене targetLang
+  // ИЛИ translationLang старые переводы не должны попадать в выдачу как валидные.
+  const cacheLangRef = useRef(`${targetLang}:${translationLang}`);
 
   useEffect(() => {
     // Отменяем предыдущие запросы
@@ -46,12 +46,13 @@ export function useTranslations(visibleSentences, materialId, targetLang = 'de')
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
 
-    // Если сменился изучаемый язык — сбрасываем кэш и текущее состояние,
-    // иначе увидим "старые" переводы на предыдущем языке.
-    if (cacheLangRef.current !== targetLang) {
+    // Если сменился изучаемый язык или язык перевода — сбрасываем кэш и
+    // текущее состояние, иначе увидим "старые" переводы на предыдущей паре.
+    const langKey = `${targetLang}:${translationLang}`;
+    if (cacheLangRef.current !== langKey) {
       translationCache.current.clear();
       pendingSet.current.clear();
-      cacheLangRef.current = targetLang;
+      cacheLangRef.current = langKey;
     }
 
     const fetchTranslations = async () => {
@@ -88,7 +89,7 @@ export function useTranslations(visibleSentences, materialId, targetLang = 'de')
           try {
             const data = await apiFetch('/api/translate-sentence', {
               method: 'POST',
-              body: JSON.stringify({ sentence: s.original || s.text, targetLang }),
+              body: JSON.stringify({ sentence: s.original || s.text, targetLang, translationLang }),
               signal: abortController.signal
             });
             return { id: s.id, translation: data.translation || '' };
@@ -138,7 +139,7 @@ export function useTranslations(visibleSentences, materialId, targetLang = 'de')
       // Не удаляем из кэша, но очищаем pending – отменённые запросы будут перезапрошены
       pendingSet.current.clear();
     };
-  }, [visibleSentences, materialId, targetLang]);
+  }, [visibleSentences, materialId, targetLang, translationLang]);
 
   return { translations };
 }

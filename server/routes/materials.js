@@ -66,6 +66,17 @@ router.get('/materials', authenticateToken, async (req, res) => {
       vocabEntries.map(v => normalizeWord(cleanWord(v.word)))
     );
 
+    // Пропущенные слова (Spec 1) по всем материалам сразу, сгруппированные
+    // по materialId — чтобы не делать отдельный запрос в цикле.
+    const allSkips = await prisma.materialWordSkip.findMany({
+      select: { materialId: true, word: true }
+    });
+    const skipsByMaterial = new Map();
+    allSkips.forEach(s => {
+      if (!skipsByMaterial.has(s.materialId)) skipsByMaterial.set(s.materialId, new Set());
+      skipsByMaterial.get(s.materialId).add(s.word);
+    });
+
     const result = materials.map((m) => {
       let fullText = '';
       if (m.type === 'video') {
@@ -73,7 +84,11 @@ router.get('/materials', authenticateToken, async (req, res) => {
       } else {
         fullText = m.rawContent || '';
       }
-      const newWordsCount = countNewWords(fullText, userVocabNormalizedSet);
+      const skippedForThisMaterial = skipsByMaterial.get(m.id) || new Set();
+      const effectiveVocabSet = skippedForThisMaterial.size === 0
+        ? userVocabNormalizedSet
+        : new Set([...userVocabNormalizedSet].filter(w => !skippedForThisMaterial.has(w)));
+      const newWordsCount = countNewWords(fullText, effectiveVocabSet);
 
       // Не отдаём subtitles/rawContent целиком в списке — они там не нужны
       // фронту (Library.jsx показывает только карточки) и раздувают ответ.
@@ -141,6 +156,39 @@ router.put('/materials/:id', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('Error updating material:', err);
     res.status(500).json({ error: 'Failed to update material' });
+  }
+});
+
+// PATCH /api/materials/:id/status – лёгкое обновление только статуса материала
+// (в отличие от PUT /materials/:id — не требует title/icon). Используется
+// автоматическими переходами статуса: new -> viewed при дочитывании/досмотре
+// материала до конца (Spec 2 доп., см. client Reader.jsx/VideoReader.jsx).
+const VALID_MATERIAL_STATUSES = ['new', 'viewed', 'learning', 'completed'];
+router.patch('/materials/:id/status', authenticateToken, async (req, res) => {
+  const userId = req.user.id;
+  const id = parseInt(req.params.id);
+  const { status } = req.body;
+
+  if (isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
+  if (!VALID_MATERIAL_STATUSES.includes(status)) {
+    return res.status(400).json({ error: 'Invalid status' });
+  }
+
+  try {
+    const existing = await prisma.material.findFirst({ where: { id, userId } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Material not found or not yours' });
+    }
+
+    const updated = await prisma.material.update({
+      where: { id },
+      data: { status }
+    });
+
+    res.json({ success: true, material: updated });
+  } catch (err) {
+    console.error('Error updating material status:', err);
+    res.status(500).json({ error: 'Failed to update material status' });
   }
 });
 
@@ -235,6 +283,96 @@ router.get('/subtitles/:id', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('Error fetching subtitles:', err);
     res.status(500).json({ error: 'Failed to fetch subtitles' });
+  }
+});
+
+// ============================================================
+// SPEC 1: Per-Material Word Skip / Unhighlight
+// ============================================================
+// Пропуск слова действует только внутри конкретного материала — не
+// затрагивает саму запись словаря (Vocab) и не влияет на слово в других
+// материалах. Ключ — нормализованное слово (та же normalizeWord/cleanWord
+// логика, что и в остальном materials.js), а не vocabId, потому что New-слово
+// может ещё не иметь записи в Vocab вообще.
+
+// GET /api/materials/:id/skipped-words — список пропущенных слов материала
+router.get('/materials/:id/skipped-words', authenticateToken, async (req, res) => {
+  const userId = req.user.id;
+  const materialId = parseInt(req.params.id);
+  if (isNaN(materialId)) return res.status(400).json({ error: 'Invalid id' });
+
+  try {
+    const material = await prisma.material.findFirst({
+      where: { id: materialId, userId }
+    });
+    if (!material) return res.status(404).json({ error: 'Material not found or not yours' });
+
+    const skips = await prisma.materialWordSkip.findMany({
+      where: { materialId },
+      select: { word: true }
+    });
+
+    res.json(skips.map(s => s.word));
+  } catch (err) {
+    console.error('Error fetching skipped words:', err);
+    res.status(500).json({ error: 'Failed to fetch skipped words' });
+  }
+});
+
+// POST /api/materials/:id/skipped-words — пропустить слово в этом материале
+router.post('/materials/:id/skipped-words', authenticateToken, async (req, res) => {
+  const userId = req.user.id;
+  const materialId = parseInt(req.params.id);
+  const { word } = req.body;
+
+  if (isNaN(materialId)) return res.status(400).json({ error: 'Invalid id' });
+  if (!word || !cleanWord(word).trim()) {
+    return res.status(400).json({ error: 'Word is required' });
+  }
+
+  const normalized = normalizeWord(cleanWord(word));
+
+  try {
+    const material = await prisma.material.findFirst({
+      where: { id: materialId, userId }
+    });
+    if (!material) return res.status(404).json({ error: 'Material not found or not yours' });
+
+    const skip = await prisma.materialWordSkip.upsert({
+      where: { materialId_word: { materialId, word: normalized } },
+      update: {},
+      create: { materialId, word: normalized }
+    });
+
+    res.status(201).json(skip);
+  } catch (err) {
+    console.error('Error skipping word:', err);
+    res.status(500).json({ error: 'Failed to skip word' });
+  }
+});
+
+// DELETE /api/materials/:id/skipped-words/:word — отменить пропуск (unskip)
+router.delete('/materials/:id/skipped-words/:word', authenticateToken, async (req, res) => {
+  const userId = req.user.id;
+  const materialId = parseInt(req.params.id);
+  if (isNaN(materialId)) return res.status(400).json({ error: 'Invalid id' });
+
+  const normalized = normalizeWord(cleanWord(decodeURIComponent(req.params.word)));
+
+  try {
+    const material = await prisma.material.findFirst({
+      where: { id: materialId, userId }
+    });
+    if (!material) return res.status(404).json({ error: 'Material not found or not yours' });
+
+    await prisma.materialWordSkip.deleteMany({
+      where: { materialId, word: normalized }
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error unskipping word:', err);
+    res.status(500).json({ error: 'Failed to unskip word' });
   }
 });
 

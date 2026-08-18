@@ -1,14 +1,20 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, useSearchParams, Link } from 'react-router-dom';
 import YouTube from 'react-youtube';
 import { motion, AnimatePresence } from 'framer-motion';
 import WordPanel from '../components/WordPanel';
 import { apiFetch } from '../utils/api';
-import { useAuth } from '../context/AuthContext';
 import { useTranslations } from '../hooks/useTranslations';
 import { useWordPanel } from '../hooks/useWordPanel';
 import { usePagination } from '../hooks/usePagination';
 import { normalizeWord } from '../utils/normalizeWord';
+import MaterialCompletionView from '../components/MaterialCompletionView';
+import LiveWordDictionary from '../components/LiveWordDictionary';
+import { useI18n } from '../context/I18nContext';
+import {
+  sans, serif, useLibraryFonts,
+  IconArrowLeft, IconExpand, IconMinimize, IconFilm,
+} from '../design/designSystem';
 
 // Язык, выбранный пользователем как изучаемый (Settings.jsx). Используется
 // для запроса субтитров на нужном языке и для перевода в WordPanel/Google Translate.
@@ -19,6 +25,9 @@ const getSubtitleLines = () => {
   const saved = Number(localStorage.getItem('subtitleLines'));
   return saved === 2 ? 2 : 1;
 };
+
+// Spec 2 (доп., п.10): язык перевода — настоящая настройка (Settings.jsx).
+const getTranslationLang = () => localStorage.getItem('translationLang') || 'ru';
 
 // --- Ключи localStorage для персистентности режима/времени на видео ---
 const viewModeKey = (id) => `videoreader_last_mode_${id}`;
@@ -36,16 +45,43 @@ const getPoint = (e) => {
 };
 
 export default function VideoReader() {
-  const { user, logout } = useAuth();
+  const { t: translate } = useI18n();
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const reviewMode = searchParams.get('mode') === 'review';
   const [material, setMaterial] = useState(null);
   const [subtitles, setSubtitles] = useState([]);
   const [error, setError] = useState(null);
+
+  // ============================================================
+  // SPEC 2 (доп.): встроенный экран завершения материала + статус материала
+  // ============================================================
+  const sessionStartWordsRef = useRef(null);
+  const [materialStatus, setMaterialStatus] = useState(null);
+  const [justTransitioned, setJustTransitioned] = useState(false);
+  const [celebrationConsumed, setCelebrationConsumed] = useState(false);
+  const atEndHandledRef = useRef(false);
+  const [videoEnded, setVideoEnded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch(`/api/materials/${id}/words`)
+      .then(data => {
+        if (cancelled) return;
+        const map = new Map();
+        (data.words || []).forEach(w => map.set(w.vocabId, w.status));
+        sessionStartWordsRef.current = map;
+      })
+      .catch(err => console.error('Ошибка загрузки снимка слов материала:', err));
+    return () => { cancelled = true; };
+  }, [id]);
+
   const playerRef = useRef(null);
   const playerIntervalRef = useRef(null);
   const isMounted = useRef(true);
   const videoTimeRef = useRef(0);
   const lastSubIndexRef = useRef(-1);
+  const lastSyncTimeMsRef = useRef(null);
 
   // Дефолт при самом первом открытии материала — субтитры.
   const [viewMode, setViewMode] = useState('subtitles');
@@ -69,18 +105,40 @@ export default function VideoReader() {
   // перезагрузки страницы, если пользователь поменял настройки в другой вкладке.
   const [targetLang, setTargetLang] = useState(getTargetLang);
   const [subtitleLines, setSubtitleLines] = useState(getSubtitleLines);
+  const [translationLang, setTranslationLang] = useState(getTranslationLang);
 
   useEffect(() => {
     const syncSettings = () => {
       setTargetLang(getTargetLang());
       setSubtitleLines(getSubtitleLines());
+      setTranslationLang(getTranslationLang());
     };
     window.addEventListener('storage', syncSettings);
     window.addEventListener('targetLangChange', syncSettings);
+    window.addEventListener('interfaceLangChange', syncSettings);
     return () => {
       window.removeEventListener('storage', syncSettings);
       window.removeEventListener('targetLangChange', syncSettings);
+      window.removeEventListener('interfaceLangChange', syncSettings);
     };
+  }, []);
+
+  const [showTranslations, setShowTranslations] = useState(() => {
+    const saved = localStorage.getItem('videoreader_show_translations');
+    return saved !== null ? saved === 'true' : false;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('videoreader_show_translations', String(showTranslations));
+  }, [showTranslations]);
+
+  // Страница сама занимает весь экран (h-screen) и скроллит только внутри
+  // себя — но т.к. она вложена в общий Layout с Header/Footer, суммарная
+  // высота документа превышает 100vh и браузер добавляет лишний скроллбар
+  // справа. Блокируем скролл body, пока эта страница смонтирована.
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = ''; };
   }, []);
 
   const [savedWords, setSavedWords] = useState([]);
@@ -172,24 +230,61 @@ export default function VideoReader() {
   } = usePagination({
     text: textForPagination,
     bookMode: false,
-    showTranslations: false,
+    showTranslations,
     materialId: id,
     wrapperRef: containerRef,
     shadowRef: shadowRef,
     enabled: viewMode === 'subtitles',
   });
 
+  // ============================================================
+  // SPEC 2 (доп.): детект "конец материала" — второй источник (в дополнение
+  // к YouTube onStateChange event.data === 0, см. onPlayerStateChange выше):
+  // в режиме субтитров — долистал до последней страницы субтитров.
+  // ============================================================
+  const subsAtEnd = viewMode === 'subtitles' && !isCalc && totalPagesCount > 0 && curPage >= totalPagesCount - 1;
+  const isAtEnd = videoEnded || subsAtEnd;
+
+  // Spec 2 (доп., п.6.3): та же логика "не точка невозврата", что и в Reader.jsx.
+  const [viewingCompletion, setViewingCompletion] = useState(false);
+  useEffect(() => {
+    setViewingCompletion(isAtEnd);
+  }, [isAtEnd]);
+
+  const showCompletionView = isAtEnd && viewingCompletion && materialStatus !== null;
+
+  useEffect(() => {
+    if (!isAtEnd || atEndHandledRef.current) return;
+    atEndHandledRef.current = true;
+    if (materialStatus === 'new') {
+      apiFetch(`/api/materials/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'viewed' }) })
+        .then(() => {
+          setMaterialStatus('viewed');
+          setJustTransitioned(true);
+        })
+        .catch(err => console.error('Ошибка обновления статуса материала:', err));
+    }
+  }, [isAtEnd, materialStatus, id]);
+
+  // Как и в Reader.jsx: переводим не весь материал сразу, а окно вокруг
+  // текущей страницы (текущая страница + запас по соседним страницам).
+  const visibleBlocks = useMemo(() => {
+    const total = subtitleBlocks.length;
+    if (total === 0) return [];
+    const pageSize = endIdx - startIdx + 1;
+    const prevStart = Math.max(0, startIdx - pageSize);
+    const nextEnd = Math.min(total, endIdx + pageSize);
+    return subtitleBlocks.slice(prevStart, nextEnd);
+  }, [subtitleBlocks, startIdx, endIdx]);
+
   const translationSentences = useMemo(() => {
-    return subtitleBlocks.map(block => ({
+    return visibleBlocks.map(block => ({
       id: block.id,
       original: block.words.map(w => w.text).join(' '),
     }));
-  }, [subtitleBlocks]);
+  }, [visibleBlocks]);
 
-  // TODO: сверить с реальной сигнатурой useTranslations.js — предполагается,
-  // что хук умеет принимать целевой язык перевода третьим аргументом
-  // (или через объект опций). Если сигнатура другая, поправить здесь.
-  const { translations } = useTranslations(translationSentences, id, targetLang);
+  const { translations } = useTranslations(translationSentences, id, targetLang, translationLang);
 
   const wordStatusMap = useMemo(() => {
     const map = new Map();
@@ -210,11 +305,13 @@ export default function VideoReader() {
         const t = playerRef.current.getCurrentTime();
         if (t > 0) {
           videoTimeRef.current = t;
-          localStorage.setItem(videoTimeKey(id), String(t));
+          // Spec 2 (доп.): не перезаписываем обычный прогресс просмотра во
+          // время review-режима.
+          if (!reviewMode) localStorage.setItem(videoTimeKey(id), String(t));
         }
       } catch {}
     }
-  }, [id]);
+  }, [id, reviewMode]);
 
   const switchViewMode = () => {
     saveCurrentTime();
@@ -345,17 +442,34 @@ export default function VideoReader() {
     try {
       timeMs = playerRef.current.getCurrentTime() * 1000;
     } catch { return; }
+
+    // Обычное воспроизведение двигает время маленькими шагами (~длина тика
+    // опроса). Если между тиками время скакнуло больше, чем на пару секунд —
+    // это перемотка/клик по прогресс-бару, и нужно переключить страницу сразу.
+    // Если шаг маленький, но целевая страница дальше, чем на одну вперёд
+    // (короткая реплика могла "провалиться" между опросами и не была замечена
+    // активной) — переключаемся ровно на одну страницу вперёд за тик, а не
+    // прыгаем через промежуточную страницу целиком: так следующий тик (через
+    // ~120мс) снова пересчитает и продолжит движение, но ни одна страница не
+    // будет пропущена полностью.
+    const prevTimeMs = lastSyncTimeMsRef.current;
+    lastSyncTimeMsRef.current = timeMs;
+    const isSeek = prevTimeMs === null || Math.abs(timeMs - prevTimeMs) > 2000;
+
     const activeIdx = findActiveSubtitle(timeMs);
     if (activeIdx >= 0) {
       const activeSub = subtitles[activeIdx];
       setActiveSubId(activeSub.id);
       if (viewMode === 'subtitles' && pages.length > 0) {
         const activeBlockIdx = blockContaining(activeIdx);
-        let page = 0;
+        let targetPage = 0;
         for (let p = pages.length - 1; p >= 0; p--) {
-          if (pages[p] <= activeBlockIdx) { page = p; break; }
+          if (pages[p] <= activeBlockIdx) { targetPage = p; break; }
         }
-        if (page !== curPage) setCurPage(page);
+        if (targetPage !== curPage) {
+          const nextPage = (!isSeek && targetPage > curPage + 1) ? curPage + 1 : targetPage;
+          setCurPage(nextPage);
+        }
       }
     }
     // Если activeIdx === -1, это либо пауза МЕЖДУ репликами (тогда сохраняем
@@ -378,11 +492,18 @@ export default function VideoReader() {
 
   const onPlayerStateChange = (event) => {
     if (event.data === 1) {
+      // Играет — значит пользователь либо продолжает, либо перемотал назад
+      // и смотрит заново, так что экран завершения больше не актуален.
+      setVideoEnded(false);
       if (playerIntervalRef.current) clearInterval(playerIntervalRef.current);
+      // 120мс вместо прежних 500 — иначе переход на следующую страницу
+      // субтитров запаздывает относительно озвучки, и первая строка новой
+      // страницы визуально "проглатывается" (уже звучит, а страница ещё
+      // не успела переключиться).
       playerIntervalRef.current = setInterval(() => {
         syncWithVideo();
         saveCurrentTime();
-      }, 500);
+      }, 120);
     } else {
       if (playerIntervalRef.current) {
         clearInterval(playerIntervalRef.current);
@@ -390,6 +511,11 @@ export default function VideoReader() {
       }
       // Сохраняем позицию и на паузе/остановке, а не только во время игры.
       saveCurrentTime();
+      // SPEC 2 (доп.): event.data === 0 — видео доиграно до конца (YT.PlayerState.ENDED).
+      // Второй источник детекта конца — долистывание субтитров (см. subsAtEnd ниже).
+      if (event.data === 0) {
+        setVideoEnded(true);
+      }
     }
   };
 
@@ -400,13 +526,21 @@ export default function VideoReader() {
     const savedMode = localStorage.getItem(viewModeKey(id));
     setViewMode(savedMode === 'full' ? 'full' : 'subtitles');
 
-    const savedTime = localStorage.getItem(videoTimeKey(id));
+    // Spec 2 (доп.): review-режим всегда начинает с начала видео, игнорируя
+    // сохранённую позицию обычного просмотра.
+    const savedTime = reviewMode ? null : localStorage.getItem(videoTimeKey(id));
     videoTimeRef.current = savedTime !== null ? Number(savedTime) : 0;
     lastSubIndexRef.current = -1;
+    lastSyncTimeMsRef.current = null;
+
+    atEndHandledRef.current = false;
+    setJustTransitioned(false);
+    setCelebrationConsumed(false);
+    setVideoEnded(false);
 
     const ac = new AbortController();
     apiFetch(`/api/material/${id}`, { signal: ac.signal })
-      .then(d => { if (isMounted.current) setMaterial(d); })
+      .then(d => { if (isMounted.current) { setMaterial(d); setMaterialStatus(d.status || 'new'); } })
       .catch(e => { if (e.name !== 'AbortError' && isMounted.current) setError(String(e)); });
     // Субтитры привязаны к материалу без указания языка — на бэкенде всегда
     // один набор субтитров на одно видео (в языке, на котором его
@@ -434,7 +568,7 @@ export default function VideoReader() {
       saveCurrentTime();
       if (playerIntervalRef.current) clearInterval(playerIntervalRef.current);
     };
-  }, [id]);
+  }, [id, reviewMode]);
 
   // Дополнительная подстраховка: сохраняем время при уходе со страницы/сворачивании вкладки.
   useEffect(() => {
@@ -497,10 +631,10 @@ export default function VideoReader() {
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'new':      return 'bg-blue-200 text-blue-900 dark:bg-blue-900 dark:text-blue-100';
-      case 'learning': return 'bg-yellow-200 text-yellow-900 dark:bg-yellow-900 dark:text-yellow-100';
-      case 'known':    return 'bg-green-200 text-green-900 dark:bg-green-900 dark:text-green-100';
-      default:         return 'bg-green-200 text-green-900 dark:bg-green-900 dark:text-green-100';
+      case 'new':      return 'bg-blue-500 text-white dark:bg-blue-500 dark:text-white';
+      case 'learning': return 'bg-yellow-500 text-white dark:bg-yellow-500 dark:text-white';
+      case 'known':    return 'bg-green-500 text-white dark:bg-green-500 dark:text-white';
+      default:         return 'bg-green-500 text-white dark:bg-green-500 dark:text-white';
     }
   };
 
@@ -536,11 +670,14 @@ export default function VideoReader() {
         {line.words.map((w) => {
           const blockWordIndex = runningIndex++;
           const normalizedWord = normalizeWord(w.text);
-          const statusFromMap = wordStatusMap.get(normalizedWord);
-          const isSavedByWord = !!statusFromMap;
-          const isSavedByIndex = highlightMap.has(`${w.subId}:${w.subLocalIndex}`);
+          // Spec 1: слово, пропущенное в этом материале, рендерится как
+          // обычный текст независимо от статуса в глобальном словаре.
+          const isSkipped = wordPanel.isWordSkipped(normalizedWord);
+          const statusFromMap = isSkipped ? undefined : wordStatusMap.get(normalizedWord);
+          const isSavedByWord = !isSkipped && !!statusFromMap;
+          const isSavedByIndex = !isSkipped && highlightMap.has(`${w.subId}:${w.subLocalIndex}`);
           const isSaved = isSavedByIndex || isSavedByWord;
-          const status = highlightMap.get(`${w.subId}:${w.subLocalIndex}`) || statusFromMap;
+          const status = isSkipped ? undefined : (highlightMap.get(`${w.subId}:${w.subLocalIndex}`) || statusFromMap);
 
           const isActive = activeSubId === w.subId;
           const isHighlighted = wordPanel.selectedSentenceIndex === blockIndex && wordPanel.highlightedIndices.has(blockWordIndex);
@@ -551,12 +688,12 @@ export default function VideoReader() {
               onClick={() => handleWordClick(w.text, blockWordIndex, blockIndex)}
               className={`inline-block px-0.5 cursor-pointer transition-colors ${
                 isHighlighted
-                  ? 'bg-blue-300 dark:bg-blue-700 font-semibold rounded-md'
+                  ? 'bg-[#3D5A80]/30 dark:bg-[#3D5A80]/50 font-semibold rounded-md text-[#0F1720] dark:text-white'
                   : isSaved
                   ? `${getStatusColor(status)} font-bold rounded-md`
                   : isActive && !isFullMode
-                  ? 'font-bold hover:bg-yellow-200 dark:hover:bg-yellow-900 hover:rounded-md'
-                  : 'hover:bg-yellow-200 dark:hover:bg-yellow-900 hover:rounded-md'
+                  ? 'font-bold hover:bg-[#E9C46A]/30 dark:hover:bg-[#E9C46A]/20 hover:rounded-md text-[#3D3B36] dark:text-[#D8D3C9]'
+                  : 'hover:bg-[#E9C46A]/30 dark:hover:bg-[#E9C46A]/20 hover:rounded-md text-[#3D3B36] dark:text-[#D8D3C9]'
               }`}
             >
               {w.text}
@@ -565,27 +702,48 @@ export default function VideoReader() {
         })}
       </div>
     ));
-  }, [activeSubId, savedWords, subtitles, handleWordClick, wordPanel.selectedSentenceIndex, wordPanel.highlightedIndices, wordStatusMap]);
+  }, [activeSubId, savedWords, subtitles, handleWordClick, wordPanel.selectedSentenceIndex, wordPanel.highlightedIndices, wordStatusMap, wordPanel.skippedWords]);
 
+  // Тень для измерения высоты страниц ДОЛЖНА рендериться теми же элементами,
+  // что и реальный контент (см. currentBlocks.map ниже) — иначе измеренная
+  // высота не совпадает с настоящей и последняя строка страницы обрезается
+  // контейнером с overflow-hidden. Раньше тень рендерила слова одной строкой
+  // без per-word span'ов — из-за паддинга на span'ах (px-0.5 в renderBlockText)
+  // реальный текст переносился иначе и получался выше измеренного.
   const renderShadowContent = useCallback(() => {
     if (!subtitleBlocks.length) return null;
     return (
       <div>
-        {subtitleBlocks.map((block) => (
-          <div key={block.id} data-page-item className="mb-4">
-            <div className="text-[20px] leading-relaxed">{block.words.map(w => w.text).join(' ')}</div>
+        {subtitleBlocks.map((block, idx) => (
+          <div key={block.id} data-page-item className="text-[20px] leading-relaxed mb-4">
+            {renderBlockText(block, idx, false)}
+            {showTranslations && (
+              <div className="text-sm mt-1 min-h-[1.5rem]">
+                {translations[block.id] || ' '}
+              </div>
+            )}
           </div>
         ))}
       </div>
     );
-  }, [subtitleBlocks]);
+  }, [subtitleBlocks, renderBlockText, showTranslations, translations]);
 
   const videoId = material?.youtubeUrl
     ? material.youtubeUrl.match(/(?:v=|\/)([0-9A-Za-z_-]{11})/)?.[1]
     : null;
 
-  if (error)    return <div className="p-8 text-red-600 dark:text-red-400">Ошибка: {error}</div>;
-  if (!material) return <div className="p-8 dark:text-gray-100">Загрузка материала...</div>;
+  useLibraryFonts();
+
+  if (error) return (
+    <div className="h-screen w-full bg-[#F2F4F7] dark:bg-[#0F172A] flex items-center justify-center text-[#C1666B] text-sm" style={sans}>
+      {translate('videoreader_error_prefix', { error })}
+    </div>
+  );
+  if (!material) return (
+    <div className="h-screen w-full bg-[#F2F4F7] dark:bg-[#0F172A] flex items-center justify-center text-[#8B8378] dark:text-[#8B8F97] text-sm" style={sans}>
+      {translate('videoreader_material_loading')}
+    </div>
+  );
 
   const activeSubtitleIdx = subtitles.findIndex(s => s.id === activeSubId);
   // Активный блок для full-режима — блок, начинающийся с активного субтитра.
@@ -596,36 +754,75 @@ export default function VideoReader() {
   const currentBlocks = viewMode === 'subtitles' ? subtitleBlocks.slice(startIdx, endIdx) : [];
 
   return (
-    <div className="h-screen w-full bg-gray-50 dark:bg-gray-900 flex flex-col overflow-hidden">
+    <div className="h-screen w-full bg-[#F2F4F7] dark:bg-[#0F172A] flex flex-col overflow-hidden transition-colors duration-300" style={sans}>
 
-      <div className="flex-shrink-0 bg-gray-50 dark:bg-gray-900 p-4 md:px-8 md:pt-8 md:pb-4 border-b border-gray-200 dark:border-gray-800">
+      <div className="flex-shrink-0 bg-[#F2F4F7] dark:bg-[#0F172A] p-4 md:px-8 md:pt-8 md:pb-4 border-b border-[#EDE9E1] dark:border-[#2A3644]">
         <div className="max-w-4xl mx-auto flex justify-between items-center flex-wrap gap-2">
-          <Link to="/" className="text-blue-600 dark:text-blue-400 hover:underline">← Назад в библиотеку</Link>
-          <h2 className="text-2xl font-bold dark:text-white">{material.title}</h2>
-          <div className="flex items-center gap-3">
-            <span className="text-sm dark:text-gray-300">👋 {user?.username}</span>
-            <button onClick={logout} className="text-sm text-red-600 dark:text-red-400 hover:underline">Выйти</button>
+          <Link
+            to="/"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-[#8B8378] dark:text-[#8B8F97] hover:text-[#3D5A80] dark:hover:text-[#8AAFD9] transition flex-shrink-0"
+          >
+            <IconArrowLeft className="w-4 h-4" /> {translate('common_back_to_library')}
+          </Link>
+          <h2 className="text-xl font-bold text-[#0F1720] dark:text-white truncate px-4" style={serif}>{material.title}</h2>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <LiveWordDictionary materialId={id} />
+            {viewMode === 'subtitles' && (
+              <button
+                onClick={() => setShowTranslations(prev => !prev)}
+                className="bg-white dark:bg-[#1A2430] border border-[#DCD7CC] dark:border-[#3A4756] text-[#3D3B36] dark:text-[#D8D3C9] font-medium text-sm py-1.5 px-3.5 rounded-full hover:bg-[#F7F5F0] dark:hover:bg-[#233040] transition shadow-sm"
+              >
+                {showTranslations ? translate('common_hide_translations') : translate('common_show_translations')}
+              </button>
+            )}
             <button
               onClick={switchViewMode}
-              className="px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 transition dark:text-white"
+              className="inline-flex items-center gap-1.5 bg-white dark:bg-[#1A2430] border border-[#DCD7CC] dark:border-[#3A4756] text-[#3D3B36] dark:text-[#D8D3C9] font-medium text-sm py-1.5 px-3.5 rounded-full hover:bg-[#F7F5F0] dark:hover:bg-[#233040] transition shadow-sm"
             >
-              {viewMode === 'full' ? '📺 Субтитры' : '📺 Полный экран'}
+              <IconFilm className="w-4 h-4" />
+              {viewMode === 'full' ? translate('videoreader_switch_to_subtitles') : translate('videoreader_switch_to_full')}
             </button>
           </div>
         </div>
         {viewMode === 'subtitles' && totalPagesCount > 0 && !isCalc && (
-          <div className="max-w-4xl mx-auto mt-2">
-            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-              <div className="bg-blue-600 h-2 rounded-full transition-all duration-300" style={{ width: `${((curPage + 1) / totalPagesCount) * 100}%` }} />
+          <div className="max-w-4xl mx-auto mt-3">
+            <div className="w-full bg-[#EDE9E1] dark:bg-[#2A3644] rounded-full h-1.5">
+              <div className="bg-[#3D5A80] h-1.5 rounded-full transition-all duration-300" style={{ width: `${((curPage + 1) / totalPagesCount) * 100}%` }} />
             </div>
           </div>
         )}
       </div>
 
-      {viewMode === 'full' ? (
+      {isAtEnd && !viewingCompletion && (
+        <button
+          onClick={() => setViewingCompletion(true)}
+          className="absolute top-24 left-4 z-20 inline-flex items-center gap-1 text-xs font-medium bg-white dark:bg-[#1A2430] border border-[#DCD7CC] dark:border-[#3A4756] rounded-full px-3 py-1.5 shadow-sm text-[#8B8378] dark:text-[#8B8F97] hover:text-[#3D5A80] dark:hover:text-[#8AAFD9] transition"
+        >
+          {translate('reader_to_words')}
+        </button>
+      )}
+
+      {showCompletionView ? (
+        <div className="flex-1 overflow-hidden min-h-0 p-4 md:px-8 md:pb-8">
+          <div className="max-w-4xl mx-auto h-full flex flex-col">
+            <div className="bg-white dark:bg-[#1A2430] p-6 md:p-8 rounded-2xl border border-[#EDE9E1] dark:border-[#2A3644] shadow-[0_1px_2px_rgba(15,23,32,0.06)] dark:shadow-[0_1px_2px_rgba(0,0,0,0.4)] flex-1 flex flex-col min-h-0 relative">
+              <MaterialCompletionView
+                materialId={id}
+                materialStatus={materialStatus}
+                justCompleted={justTransitioned && !celebrationConsumed}
+                reviewMode={reviewMode}
+                sessionStartWords={sessionStartWordsRef.current}
+                onStatusChange={setMaterialStatus}
+                onCelebrationDone={() => setCelebrationConsumed(true)}
+                onBack={() => setViewingCompletion(false)}
+              />
+            </div>
+          </div>
+        </div>
+      ) : viewMode === 'full' ? (
         <div className="flex-1 overflow-y-auto p-4 md:p-8">
-          <div className="w-full">
-            <div className="mb-4 dark:bg-gray-900 rounded-lg overflow-hidden">
+          <div className="w-full max-w-4xl mx-auto">
+            <div className="mb-4 rounded-2xl overflow-hidden border border-[#EDE9E1] dark:border-[#2A3644] shadow-[0_1px_2px_rgba(15,23,32,0.06)] dark:shadow-[0_1px_2px_rgba(0,0,0,0.4)]">
               <YouTube
                 key="player-full"
                 videoId={videoId}
@@ -634,7 +831,7 @@ export default function VideoReader() {
                 onStateChange={onPlayerStateChange}
               />
             </div>
-            <div className="relative bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 select-none min-h-[6rem] flex items-center justify-center overflow-hidden">
+            <div className="relative bg-white dark:bg-[#1A2430] p-6 rounded-2xl border border-[#EDE9E1] dark:border-[#2A3644] shadow-[0_1px_2px_rgba(15,23,32,0.06)] dark:shadow-[0_1px_2px_rgba(0,0,0,0.4)] select-none min-h-[6rem] flex items-center justify-center overflow-hidden">
               {activeBlock ? (
                 <AnimatePresence initial={false}>
                   <motion.div
@@ -643,13 +840,13 @@ export default function VideoReader() {
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.35, ease: 'easeInOut' }}
-                    className="absolute inset-0 flex flex-col items-center justify-center text-[20px] leading-relaxed text-center dark:text-gray-100 px-6"
+                    className="absolute inset-0 flex flex-col items-center justify-center text-[20px] leading-relaxed text-center text-[#3D3B36] dark:text-[#D8D3C9] px-6"
                   >
                     {renderBlockText(activeBlock, activeBlockIdx, true)}
                   </motion.div>
                 </AnimatePresence>
               ) : (
-                <span className="text-gray-400">🎬 Субтитры появятся при воспроизведении</span>
+                <span className="text-[#B4AEA2] dark:text-[#5A6472] text-sm">{translate('videoreader_subtitles_appear_hint')}</span>
               )}
             </div>
           </div>
@@ -658,7 +855,7 @@ export default function VideoReader() {
         <>
           <div className="flex-1 overflow-hidden min-h-0 p-4 md:px-8 md:pb-8">
             <div className="max-w-4xl mx-auto h-full flex flex-col">
-              <div className="bg-white dark:bg-gray-800 p-6 md:p-8 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 flex-1 flex flex-col min-h-0">
+              <div className="bg-white dark:bg-[#1A2430] p-6 md:p-8 rounded-2xl border border-[#EDE9E1] dark:border-[#2A3644] shadow-[0_1px_2px_rgba(15,23,32,0.06)] dark:shadow-[0_1px_2px_rgba(0,0,0,0.4)] flex-1 flex flex-col min-h-0">
                 <div ref={containerRef} className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
                   <div
                     ref={shadowRef}
@@ -671,53 +868,70 @@ export default function VideoReader() {
 
                   {isCalc ? (
                     <div className="flex-1 flex items-center justify-center">
-                      <div className="animate-pulse text-gray-400 dark:text-gray-500">Верстка страницы...</div>
+                      <div className="animate-pulse text-[#B4AEA2] dark:text-[#5A6472] text-sm">{translate('videoreader_layout_calculating')}</div>
                     </div>
                   ) : (
                     <div className="flex-1 flex flex-col justify-center">
                       <div className="space-y-4">
                         {currentBlocks.map((block, idx) => (
-                          <div key={block.id} className="text-[20px] leading-relaxed dark:text-gray-100">
+                          <div key={block.id} className="text-[20px] leading-relaxed text-[#3D3B36] dark:text-[#D8D3C9]">
                             {renderBlockText(block, startIdx + idx, false)}
+                            {showTranslations && (
+                              <div className="text-sm text-[#8B8378] dark:text-[#8B8F97] mt-1 min-h-[1.5rem]">
+                                {translations[block.id] || translate('study_mode_translation_loading')}
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
                       {currentBlocks.length === 0 && (
-                        <p className="text-gray-400 text-center">Нет субтитров на этой странице</p>
+                        <p className="text-[#B4AEA2] dark:text-[#5A6472] text-center text-sm">{translate('videoreader_no_subtitles_page')}</p>
                       )}
                     </div>
                   )}
                 </div>
 
-                {!isCalc && totalPagesCount > 1 && (
-                  <div className="flex justify-between items-center mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 flex-shrink-0">
-                    <button
-                      onClick={() => setCurPage(p => Math.max(0, p - 1))}
-                      disabled={curPage === 0}
-                      className={`px-4 py-2 rounded-lg font-medium transition ${
-                        curPage === 0
-                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed dark:bg-gray-700 dark:text-gray-400'
-                          : 'bg-blue-500 text-white hover:bg-blue-600'
-                      }`}
-                    >
-                      ← Назад
-                    </button>
-                    <span className="text-gray-700 dark:text-gray-300 font-medium">
-                      {curPage + 1} / {totalPagesCount}
-                    </span>
-                    <button
-                      onClick={() => setCurPage(p => Math.min(totalPagesCount - 1, p + 1))}
-                      disabled={curPage === totalPagesCount - 1}
-                      className={`px-4 py-2 rounded-lg font-medium transition ${
-                        curPage === totalPagesCount - 1
-                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed dark:bg-gray-700 dark:text-gray-400'
-                          : 'bg-blue-500 text-white hover:bg-blue-600'
-                      }`}
-                    >
-                      Вперед →
-                    </button>
-                  </div>
-                )}
+                {/* Пагинация всегда занимает место в разметке (просто скрывается через
+                    invisible, когда страница одна или ещё идёт расчёт), а не
+                    монтируется/размонтируется условно. Раньше при первом расчёте
+                    высоты (isCalc===true) эта панель ещё не существовала, поэтому
+                    containerRef.clientHeight измерялся БЕЗ неё — usePagination
+                    паковал на страницу на одну строку больше, чем реально
+                    помещается. Когда расчёт завершался, панель появлялась, забирала
+                    часть высоты у контейнера с текстом, и последняя строка
+                    страницы обрезалась overflow-hidden. Стабильная разметка с
+                    самого начала убирает этот сдвиг. */}
+                <div
+                  className={`flex justify-between items-center mt-4 pt-4 border-t border-[#EDE9E1] dark:border-[#2A3644] flex-shrink-0 ${
+                    !isCalc && totalPagesCount > 1 ? '' : 'invisible'
+                  }`}
+                >
+                  <button
+                    onClick={() => setCurPage(p => Math.max(0, p - 1))}
+                    disabled={curPage === 0}
+                    className={`px-4 py-2 rounded-lg font-medium transition ${
+                      curPage === 0
+                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed dark:bg-gray-700 dark:text-gray-400'
+                        : 'bg-blue-500 text-white hover:bg-blue-600'
+                    }`}
+                  >
+                    {translate('common_prev_page')}
+                  </button>
+                  <span className="text-[#8B8378] dark:text-[#8B8F97] font-medium text-sm">
+                    {curPage + 1} / {totalPagesCount}
+                  </span>
+                  <button
+                    onClick={() => setCurPage(p => Math.min(totalPagesCount - 1, p + 1))}
+                    disabled={curPage === totalPagesCount - 1}
+                    className={`px-4 py-2 rounded-lg font-medium transition ${
+                      curPage === totalPagesCount - 1
+                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed dark:bg-gray-700 dark:text-gray-400'
+                        : 'bg-blue-500 text-white hover:bg-blue-600'
+                    }`}
+                  >
+                    {translate('common_next_page')}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -725,7 +939,7 @@ export default function VideoReader() {
           {videoId && (
             <div
               ref={videoRef}
-              className="fixed z-50 bg-white dark:bg-gray-800 rounded-lg shadow-2xl border border-gray-300 dark:border-gray-600 overflow-hidden"
+              className="fixed z-50 bg-white dark:bg-[#1A2430] rounded-2xl shadow-2xl border border-[#DCD7CC] dark:border-[#3A4756] overflow-hidden"
               style={{
                 top: videoPosition.y,
                 left: videoPosition.x,
@@ -736,15 +950,17 @@ export default function VideoReader() {
               onTouchStart={onDragStart}
             >
               <div
-                className="video-drag-handle cursor-move bg-gray-100 dark:bg-gray-700 px-3 py-2 flex justify-between items-center select-none"
+                className="video-drag-handle cursor-move bg-[#F7F5F0] dark:bg-[#233040] px-3 py-2 flex justify-between items-center select-none"
                 style={{ touchAction: 'none' }}
               >
-                <span className="text-sm font-medium dark:text-gray-200">🎬 Видео</span>
+                <span className="inline-flex items-center gap-1.5 text-sm font-medium text-[#3D3B36] dark:text-[#D8D3C9]">
+                  <IconFilm className="w-4 h-4" /> {translate('videoreader_video_label')}
+                </span>
                 <button
                   onClick={(e) => { e.stopPropagation(); setIsVideoMinimized(p => !p); }}
-                  className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-lg leading-none"
+                  className="text-[#8B8378] dark:text-[#8B8F97] hover:text-[#0F1720] dark:hover:text-white transition p-0.5"
                 >
-                  {isVideoMinimized ? '⤢' : '⤡'}
+                  {isVideoMinimized ? <IconExpand className="w-4 h-4" /> : <IconMinimize className="w-4 h-4" />}
                 </button>
               </div>
               <div style={{ display: isVideoMinimized ? 'none' : 'block', width: '100%', height: '100%' }}>
@@ -761,7 +977,7 @@ export default function VideoReader() {
                 />
               </div>
               {isVideoMinimized && (
-                <div className="flex items-center justify-center h-8 text-gray-500 dark:text-gray-400 text-sm">Видео свернуто</div>
+                <div className="flex items-center justify-center h-8 text-[#8B8378] dark:text-[#8B8F97] text-sm">{translate('videoreader_video_minimized')}</div>
               )}
               {!isVideoMinimized && (
                 <div
@@ -770,7 +986,7 @@ export default function VideoReader() {
                   onTouchStart={onResizeStart}
                   style={{ background: 'transparent', touchAction: 'none' }}
                 >
-                  <div className="absolute bottom-1 right-1 w-3 h-3 border-r-2 border-b-2 border-gray-400 dark:border-gray-500"></div>
+                  <div className="absolute bottom-1 right-1 w-3 h-3 border-r-2 border-b-2 border-[#B4AEA2] dark:border-[#5A6472]"></div>
                 </div>
               )}
             </div>
@@ -779,7 +995,7 @@ export default function VideoReader() {
       )}
 
       {wordPanel.selectedWord && (
-        <div className="fixed top-20 right-5 z-50 w-96 max-h-[90vh] overflow-y-auto shadow-2xl rounded-lg">
+        <div className="fixed top-20 right-5 z-50 w-96 max-h-[90vh] overflow-y-auto shadow-2xl rounded-2xl border border-[#EDE9E1] dark:border-[#2A3644]">
           <WordPanel
             canonicalWord={wordPanel.canonicalWord}
             wordTranslation={wordPanel.wordTranslation}
@@ -792,6 +1008,8 @@ export default function VideoReader() {
             showContext={wordPanel.showContext}
             selectedToken={wordPanel.selectedToken}
             hasReflexive={wordPanel.hasReflexive}
+            isSkipped={wordPanel.isWordSkipped(wordPanel.canonicalWord)}
+            onToggleSkip={() => wordPanel.toggleSkipWord(wordPanel.canonicalWord)}
             onCanonicalChange={(val) => {
               wordPanel.setCanonicalWord(val);
               wordPanel.setIsManualEdit(true);

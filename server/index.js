@@ -13,6 +13,7 @@ const textsRouter = require('./routes/texts');
 const foldersRouter = require('./routes/folders');
 const importRouter = require('./routes/import');
 const materialsRouter = require('./routes/materials');
+const reviewRouter = require('./routes/review');
 const translateRouter = require('./routes/translateSentence');
 const flashcardsRouter = require('./routes/flashcards');
 const gamesRouter = require('./routes/games');
@@ -63,6 +64,7 @@ app.use('/api', textsRouter);
 app.use('/api', foldersRouter);
 app.use('/api', importRouter);
 app.use('/api', materialsRouter);
+app.use('/api', reviewRouter);
 app.use('/api', translateRouter);
 app.use('/api', settingsRouter); // ← ДОБАВЛЕНО: даёт /api/user/settings (GET, PATCH)
 

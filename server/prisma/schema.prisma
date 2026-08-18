@@ -19,6 +19,12 @@ model User {
   targetLang    String    @default("de") @map("target_lang") @db.VarChar(5)
   subtitleLines Int       @default(1) @map("subtitle_lines")
 
+  // Пользовательские настройки Review Loop (Spec 2 доп., п.8 "калькулятор
+  // повторений") — JSON-строка { intervals: [{maxPercent, days}], archivePercent,
+  // archiveIntervalDays, dropOverrideThreshold, overrideMinDays, overrideMaxDays }.
+  // null = используются дефолты из server/utils/reviewUtils.js.
+  reviewSettings String?  @map("review_settings") @db.Text
+
   materials  Material[]
   folders    Folder[]
   vocab      Vocab[]
@@ -33,10 +39,14 @@ model Folder {
   id        Int       @id @default(autoincrement())
   name      String    @db.Text
   createdAt DateTime  @default(now()) @map("created_at")
-  
+
   userId    Int       @map("user_id")
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+
+  parentId  Int?      @map("parent_id")
+  parent    Folder?   @relation("FolderToFolder", fields: [parentId], references: [id], onDelete: Cascade)
+  children  Folder[]  @relation("FolderToFolder")
+
   materials Material[]
 
   @@map("folders")
@@ -52,6 +62,7 @@ model Material {
   youtubeUrl  String?   @map("youtube_url") @db.Text
   rawContent  String?   @map("raw_content") @db.Text
   icon        String?   @default("/icons/default.png")
+  thumbnail   String?   @db.Text   
   importedAt  DateTime  @default(now()) @map("imported_at")
   folderId    Int?      @map("folder_id")
   createdAt   DateTime  @default(now()) @map("created_at")
@@ -62,10 +73,15 @@ model Material {
 
   subtitles   Subtitle[]
   vocab       Vocab[]
+  wordSkips   MaterialWordSkip[]
+
+  // НОВОЕ (Spec 2) — обратная связь на review loop, 1:1
+  review      MaterialReview?
 
   // НОВЫЕ ПОЛЯ (добавлены)
   author      String?   @db.Text              // автор материала (необязательный)
-  status      String    @default("new") @db.VarChar(20) // new, learning, completed
+  status      String    @default("new") @db.VarChar(20) // new, viewed, learning, completed
+  language    String    @default("de") @db.VarChar(5)   // язык изучения материала (Spec 2 доп., п.9)
 
   @@map("texts")
 }
@@ -108,4 +124,51 @@ model Vocab {
   material        Material? @relation(fields: [sourceTextId], references: [id], onDelete: SetNull)
 
   @@map("vocab")
+}
+
+// ============================================================
+// SPEC 1: ПРОПУСК СЛОВА В КОНКРЕТНОМ МАТЕРИАЛЕ
+// ============================================================
+// Локальный оверрайд "не подсвечивать это слово в этом материале".
+// Не трогает саму запись словаря (Vocab) и не влияет на слово в других
+// материалах. Ключ — normalized word (а не vocabId), потому что New-слово
+// ещё может не иметь записи в Vocab вообще (см. Spec 1: "New word skipped
+// → not relevant to this text").
+model MaterialWordSkip {
+  id         Int      @id @default(autoincrement())
+  word       String   @db.Text   // нормализованное слово (см. utils/normalizeWord.js)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  materialId Int      @map("material_id")
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  @@unique([materialId, word])
+  @@map("material_word_skips")
+}
+
+// ============================================================
+// SPEC 2: REVIEW LOOP / SPACED REPETITION ДЛЯ МАТЕРИАЛОВ
+// ============================================================
+// Единица планирования — материал целиком (не отдельное слово).
+// Наличие записи здесь = материал добавлен пользователем в Review loop.
+// % known пересчитывается динамически при каждом проходе на основе
+// текущего состояния Vocab (см. server/utils/reviewUtils.js), здесь же
+// кэшируется последнее значение — нужно для "override" правила (просадка
+// более чем на ~15 п.п. с прошлого раза форсирует короткий интервал).
+model MaterialReview {
+  id               Int       @id @default(autoincrement())
+  materialId       Int       @unique @map("material_id")
+  material         Material  @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  lastPercentKnown Float?    @map("last_percent_known") // % known после последнего прохода (или сразу после добавления)
+  nextReviewAt     DateTime? @map("next_review_at")      // null = ещё не назначено
+  lastReviewedAt   DateTime? @map("last_reviewed_at")
+
+  archived         Boolean   @default(false)
+  archivedAt       DateTime? @map("archived_at")
+
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  @@map("material_reviews")
 }
